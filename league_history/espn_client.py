@@ -21,14 +21,19 @@ POSITION_MAP = {
 
 LINEUP_SLOT_MAP = {
     0: "QB",
+    1: "QB",     # TQB: a second QB-only slot in 2-QB leagues
     2: "RB",
+    3: "Flex",   # RB/WR flex
     4: "WR",
+    5: "Flex",   # WR/TE flex
     6: "TE",
+    7: "Flex",   # OP/superflex: any offensive position
     16: "DST",
     17: "K",
     20: "Bench",
     21: "IR",
-    23: "Flex",
+    23: "Flex",  # RB/WR/TE flex - the common "FLEX" slot
+    24: "Flex",  # ER: an additional flex-type slot some leagues configure
 }
 
 
@@ -112,9 +117,14 @@ class EspnClient:
                 f"ESPN returned a non-JSON response for season {season}. Check the league ID, season, and cookies."
             ) from exc
 
-        weekly_schedule = self._fetch_weekly_boxscores(season, urls, payload, params)
+        weeks = self._weeks_from_schedule(payload.get("schedule", []) or [])
+        weekly_schedule = self._fetch_weekly_boxscores(season, urls, weeks, params)
         if weekly_schedule:
             payload["schedule"] = weekly_schedule
+
+        payload["transactions"] = self._fetch_weekly_transactions(
+            season, urls, weeks, payload.get("transactions", []) or [], params
+        )
         return payload
 
     def _modern_urls(self, season: int) -> list[str]:
@@ -152,26 +162,32 @@ class EspnClient:
             raise EspnSyncError("No ESPN API hosts were configured.")
         return last_response
 
+    @staticmethod
+    def _weeks_from_schedule(schedule: list[dict[str, Any]]) -> list[int]:
+        return sorted(
+            {
+                int(game.get("matchupPeriodId") or game.get("scoringPeriodId") or 0)
+                for game in schedule
+                if int(game.get("matchupPeriodId") or game.get("scoringPeriodId") or 0) > 0
+            }
+        )
+
     def _fetch_weekly_boxscores(
         self,
         season: int,
         urls: list[str],
-        payload: dict[str, Any],
+        weeks: list[int],
         base_params: list[tuple[str, str]] | None = None,
     ) -> list[dict[str, Any]]:
-        weeks = sorted(
-            {
-                int(game.get("matchupPeriodId") or game.get("scoringPeriodId") or 0)
-                for game in payload.get("schedule", []) or []
-                if int(game.get("matchupPeriodId") or game.get("scoringPeriodId") or 0) > 0
-            }
-        )
         if not weeks:
             return []
 
         weekly_games: list[dict[str, Any]] = []
         for week in weeks:
-            params = [("view", "mBoxscore"), ("scoringPeriodId", str(week))]
+            # mRoster is required here too - without it ESPN drops per-player metadata
+            # like injuryStatus from this week's snapshot, even though mBoxscore alone
+            # is enough for scoring.
+            params = [("view", "mBoxscore"), ("view", "mRoster"), ("scoringPeriodId", str(week))]
             if base_params and any(name == "seasonId" for name, _ in base_params):
                 params = [("seasonId", str(season)), *params]
             response = self._get_first_available(
@@ -193,6 +209,54 @@ class EspnClient:
                 if game_week == week and _game_has_roster_entries(game):
                     weekly_games.append(game)
         return weekly_games
+
+    @staticmethod
+    def _transaction_key(txn: dict[str, Any]) -> Any:
+        txn_id = txn.get("id")
+        if txn_id is not None:
+            return txn_id
+        player_ids = tuple(sorted(str(item.get("playerId")) for item in txn.get("items", []) or []))
+        return (txn.get("teamId"), txn.get("scoringPeriodId"), txn.get("type"), player_ids)
+
+    def _fetch_weekly_transactions(
+        self,
+        season: int,
+        urls: list[str],
+        weeks: list[int],
+        initial_transactions: list[dict[str, Any]],
+        base_params: list[tuple[str, str]] | None = None,
+    ) -> list[dict[str, Any]]:
+        # A single league-level fetch with mTransactions2 only returns ESPN's small
+        # "recent activity" window, not the full season - so pull week by week like
+        # boxscores, and de-duplicate since a transaction can surface in more than
+        # one week's window.
+        all_transactions: list[dict[str, Any]] = []
+        seen: set[Any] = set()
+        for txn in initial_transactions:
+            key = self._transaction_key(txn)
+            if key not in seen:
+                seen.add(key)
+                all_transactions.append(txn)
+
+        for week in weeks:
+            params = [("view", "mTransactions2"), ("scoringPeriodId", str(week))]
+            if base_params and any(name == "seasonId" for name, _ in base_params):
+                params = [("seasonId", str(season)), *params]
+            response = self._get_first_available(urls, params=params)
+            if response.status_code >= 400 or response.is_redirect:
+                continue
+            try:
+                week_payload = response.json()
+                if isinstance(week_payload, list):
+                    week_payload = week_payload[0] if week_payload else {}
+            except ValueError:
+                continue
+            for txn in week_payload.get("transactions", []) or []:
+                key = self._transaction_key(txn)
+                if key not in seen:
+                    seen.add(key)
+                    all_transactions.append(txn)
+        return all_transactions
 
     def _has_auth(self) -> bool:
         names = _cookie_names(_clean_cookie_header(self.config.cookie_header))
