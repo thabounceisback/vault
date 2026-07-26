@@ -4,5 +4,6 @@ __pycache__/
 *.py[cod]
 data/*.sqlite
 data/*.sqlite-*
-.streamlit/
+.streamlit/*
+!.streamlit/config.toml
 .pytest_cache/

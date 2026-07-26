@@ -1,4 +1,4 @@
-# League History Dashboard
+# 🥨 The Vault — A League About Nothing
 
 An interactive Streamlit dashboard for mining an ESPN fantasy league's own history:
 draft tendencies, hindsight draft value, schedule luck, positional performance,
@@ -41,6 +41,16 @@ Then open the dashboard and click **Sync ESPN history** in the sidebar.
 The full `ESPN_COOKIE` header is optional, but it is the most reliable auth
 path. In browser DevTools, open the Network tab, reload your ESPN Fantasy league
 page, select an ESPN API request, and copy the `Cookie` request header.
+
+## Branding
+
+The Vault is themed like a dark bank-vault backdrop lit up with a Seinfeld-inspired
+color palette (puffy-shirt mustard, Kramer's-door red, Jerry's-shirt blue, and so
+on) - see `.streamlit/config.toml` and the `BRAND` constants at the top of
+`app.py`. Section and chart names riff on the show (`🌌 Bizarro World` for
+schedule luck, `💼 Vandelay Inc.` for the draft room, `🔮 No Points For You` for
+projections, ...), but every tab and chart keeps a plain-English caption or
+subtitle right underneath so the joke never gets in the way of reading the data.
 
 ## Testing
 
