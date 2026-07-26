@@ -1,0 +1,11 @@
+# The Vault's theme - a dark bank-vault backdrop with a Seinfeld-inspired
+# mustard accent. Set here (not just in app.py's CSS) so every native
+# Streamlit widget - labels, captions, dataframes - gets legible text color
+# instead of falling back to the light-theme default.
+[theme]
+base = "dark"
+primaryColor = "#E3A518"
+backgroundColor = "#0e0b08"
+secondaryBackgroundColor = "#1a140f"
+textColor = "#F4EFE6"
+font = "sans serif"

@@ -31,56 +31,112 @@ from league_history.storage import Database
 
 
 DB_PATH = Path("data/league_history.sqlite")
+
+# --- The Vault x Seinfeld brand system -------------------------------------
+# A dark bank-vault backdrop (this is "The Vault", after all) with brass/gold
+# trim, lit up with a Seinfeld-inspired accent palette. Fun names go on the
+# chrome - tab titles, chart titles, headers, empty states - never on the
+# functional widget labels/errors, so the app stays easy to actually use.
+BRAND = {
+    "mustard": "#E3A518",       # the puffy shirt
+    "kramer_red": "#C1272D",    # Kramer's front door
+    "jerry_blue": "#2E5A8C",    # Jerry's button-down
+    "elaine_green": "#4C9A2A",  # Elaine's dancing
+    "newman_brown": "#8B5E34",  # Newman's postal uniform
+    "festivus_silver": "#B7B7B0",  # the aluminum pole
+    "vandelay_teal": "#1F8A82",    # Art Vandelay, importer/exporter
+    "soup_orange": "#E0651B",      # the Soup Nazi's counter
+    "bizarro_purple": "#6A4C93",   # Bizarro world
+    "mint": "#8FD9C4",              # the Junior Mint
+    "vault_bg": "#0e0b08",
+    "vault_panel": "#1a140f",
+    "cream": "#F4EFE6",
+}
 COLORWAY = [
-    "#5B8DEF",
-    "#F25F5C",
-    "#20BF55",
-    "#F7B32B",
-    "#7B61FF",
-    "#2EC4B6",
-    "#FF8C42",
-    "#C44569",
-    "#6C757D",
-    "#9BC53D",
+    BRAND["mustard"],
+    BRAND["kramer_red"],
+    BRAND["jerry_blue"],
+    BRAND["elaine_green"],
+    BRAND["newman_brown"],
+    BRAND["festivus_silver"],
+    BRAND["vandelay_teal"],
+    BRAND["soup_orange"],
+    BRAND["bizarro_purple"],
+    BRAND["mint"],
 ]
 PLOT_TEMPLATE = "plotly_dark"
+DISPLAY_FONT = "'Oswald', 'Arial Narrow Bold', 'Segoe UI', sans-serif"
+BODY_FONT = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 
 
 st.set_page_config(
-    page_title="League History Dashboard",
-    page_icon=":trophy:",
+    page_title="The Vault — A League About Nothing",
+    page_icon="🥨",
     layout="wide",
 )
 
 st.markdown(
-    """
+    f"""
     <style>
-    .stApp {
+    @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&display=swap');
+    .stApp {{
         background:
-            radial-gradient(circle at 16% 0%, rgba(91, 141, 239, 0.16), transparent 28rem),
-            radial-gradient(circle at 85% 8%, rgba(46, 196, 182, 0.12), transparent 30rem),
-            #0b0f19;
-    }
-    [data-testid="stSidebar"] {
-        background: #151927;
-        border-right: 1px solid rgba(255,255,255,0.08);
-    }
-    h1, h2, h3 { letter-spacing: 0; }
-    div[data-testid="stMetric"] {
-        background: rgba(255,255,255,0.045);
-        border: 1px solid rgba(255,255,255,0.08);
+            radial-gradient(circle at 18% 0%, rgba(227, 165, 24, 0.14), transparent 30rem),
+            radial-gradient(circle at 85% 6%, rgba(193, 39, 45, 0.10), transparent 32rem),
+            {BRAND["vault_bg"]};
+    }}
+    [data-testid="stSidebar"] {{
+        background: {BRAND["vault_panel"]};
+        border-right: 1px solid rgba(227, 165, 24, 0.18);
+    }}
+    h1, h2, h3 {{
+        font-family: {DISPLAY_FONT};
+        letter-spacing: 0.02em;
+        color: {BRAND["cream"]};
+    }}
+    p, span, label, div {{ font-family: {BODY_FONT}; }}
+    div[data-testid="stMetric"] {{
+        background: rgba(227, 165, 24, 0.06);
+        border: 1px solid rgba(227, 165, 24, 0.28);
         border-radius: 8px;
         padding: 14px 16px;
-    }
-    div[data-testid="stMetricLabel"] { color: #aab3c5; }
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
-        border-bottom: 1px solid rgba(255,255,255,0.08);
-    }
-    .stTabs [data-baseweb="tab"] {
+    }}
+    div[data-testid="stMetricLabel"] {{ color: {BRAND["festivus_silver"]}; }}
+    div[data-testid="stMetricValue"], div[data-testid="stMetricValue"] * {{
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        font-size: 1.1rem;
+        line-height: 1.3;
+    }}
+    div[data-testid="stTabs"] [role="tablist"] {{
+        gap: 4px;
+        border-bottom: 1px solid rgba(227, 165, 24, 0.22);
+        flex-wrap: wrap !important;
+        overflow: visible !important;
+        height: auto !important;
+    }}
+    div[data-testid="stTabs"] [data-testid="stTab"] {{
         border-radius: 8px 8px 0 0;
-        padding: 10px 14px;
-    }
+        padding: 8px 10px;
+        font-family: {DISPLAY_FONT};
+        font-size: 0.92rem;
+    }}
+    div[data-testid="stTabs"] [aria-selected="true"] {{
+        color: {BRAND["mustard"]} !important;
+    }}
+    .stButton > button {{
+        border: 1px solid rgba(227, 165, 24, 0.35);
+    }}
+    .stButton > button:hover {{
+        border-color: {BRAND["mustard"]};
+        color: {BRAND["mustard"]};
+    }}
+    .vault-tagline {{
+        color: {BRAND["festivus_silver"]};
+        font-style: italic;
+        margin-top: -0.6rem;
+    }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -184,167 +240,176 @@ def normalize_import(frame: pd.DataFrame, import_type: str) -> tuple[pd.DataFram
 
 def sidebar(db: Database) -> tuple[list[int], list[str]]:
     with st.sidebar:
-        st.header("League Source")
+        st.markdown("## 🥨 The Vault")
+        st.markdown("<p class='vault-tagline'>A league about nothing.</p>", unsafe_allow_html=True)
         tables = apply_owner_aliases(load_tables(str(DB_PATH), db_cache_key()))
         profiles = tables.get("league_profiles", pd.DataFrame())
 
-        selected_profile = None
-        if not profiles.empty:
-            def _profile_label(profile_id: int | None) -> str:
-                if profile_id is None:
-                    return "New / unsaved"
-                row = profiles.loc[profiles["profile_id"] == profile_id].iloc[0]
-                return f"{row.league_name} ({int(row.league_id)})"
+        # Filters live up top since they're what you'll actually touch most often -
+        # league setup is fussed with once and then mostly left alone.
+        with st.container(border=True):
+            st.subheader("Filters")
+            seasons = sorted(tables["teams"]["season"].dropna().unique().tolist()) if not tables["teams"].empty else []
+            selected_seasons = st.multiselect("Visible seasons", seasons, default=seasons)
 
-            profile_options: list[int | None] = [None] + profiles["profile_id"].tolist()
-            selected_profile_id = st.selectbox("Saved league", profile_options, format_func=_profile_label)
-            if selected_profile_id is not None:
-                selected_profile = profiles.loc[profiles["profile_id"] == selected_profile_id].iloc[0]
+            managers = sorted(tables["teams"]["manager_name"].dropna().unique().tolist()) if not tables["teams"].empty else []
+            selected_managers = st.multiselect("Managers", managers, default=managers)
 
-        default_league_id = str(int(selected_profile["league_id"])) if selected_profile is not None else os.getenv("ESPN_LEAGUE_ID", "")
-        default_seasons = str(selected_profile["seasons"]) if selected_profile is not None else os.getenv("ESPN_SEASONS", "2021,2022,2023,2024,2025")
-        default_name = str(selected_profile["league_name"]) if selected_profile is not None else "My League"
+        with st.container(border=True):
+            st.subheader("League Setup")
+            st.caption("Sync a real ESPN league, load the sample league, or import your own CSVs.")
 
-        league_name = st.text_input("League name", default_name)
-        league_id = st.text_input("ESPN league ID", default_league_id)
-        seasons_text = st.text_input("Seasons", default_seasons)
-        swid = st.text_input("SWID", os.getenv("ESPN_SWID", ""), type="password")
-        espn_s2 = st.text_input("espn_s2", os.getenv("ESPN_S2", ""), type="password")
-        cookie_header = st.text_input(
-            "Cookie header or JSON",
-            os.getenv("ESPN_COOKIE", ""),
-            type="password",
-            help="Optional. Accepts a browser Cookie header or JSON with swid/espn_s2 keys.",
-        )
-        if swid or espn_s2 or cookie_header:
-            st.caption(cookie_auth_summary(cookie_header or None, swid or None, espn_s2 or None))
+            selected_profile = None
+            if not profiles.empty:
+                def _profile_label(profile_id: int | None) -> str:
+                    if profile_id is None:
+                        return "New / unsaved"
+                    row = profiles.loc[profiles["profile_id"] == profile_id].iloc[0]
+                    return f"{row.league_name} ({int(row.league_id)})"
 
-        col_save, col_a, col_b = st.columns([1, 1, 1])
-        if col_save.button("Save league", width="stretch"):
-            try:
-                db.save_league_profile(int(league_id), league_name.strip() or "My League", seasons_text)
-                st.cache_data.clear()
-                st.success("League saved.")
-            except ValueError:
-                st.error("League ID must be a number before saving.")
+                profile_options: list[int | None] = [None] + profiles["profile_id"].tolist()
+                selected_profile_id = st.selectbox("Saved league", profile_options, format_func=_profile_label)
+                if selected_profile_id is not None:
+                    selected_profile = profiles.loc[profiles["profile_id"] == selected_profile_id].iloc[0]
 
-        if col_a.button("Load sample", width="stretch"):
-            if db.is_empty():
-                seed_sample_database(db, replace=True)
-                st.cache_data.clear()
-                st.success("Sample league loaded.")
-            else:
-                st.session_state["confirm_load_sample"] = True
+            default_league_id = str(int(selected_profile["league_id"])) if selected_profile is not None else os.getenv("ESPN_LEAGUE_ID", "")
+            default_seasons = str(selected_profile["seasons"]) if selected_profile is not None else os.getenv("ESPN_SEASONS", "2021,2022,2023,2024,2025")
+            default_name = str(selected_profile["league_name"]) if selected_profile is not None else "My League"
 
-        if st.session_state.get("confirm_load_sample"):
-            st.warning(
-                "This will permanently replace your current league data "
-                "(synced ESPN history, uploaded CSVs, etc.) with generated sample data."
+            league_name = st.text_input("League name", default_name)
+            league_id = st.text_input("ESPN league ID", default_league_id)
+            seasons_text = st.text_input("Seasons", default_seasons)
+            swid = st.text_input("SWID", os.getenv("ESPN_SWID", ""), type="password")
+            espn_s2 = st.text_input("espn_s2", os.getenv("ESPN_S2", ""), type="password")
+            cookie_header = st.text_input(
+                "Cookie header or JSON",
+                os.getenv("ESPN_COOKIE", ""),
+                type="password",
+                help="Optional. Accepts a browser Cookie header or JSON with swid/espn_s2 keys.",
             )
-            confirm_col, cancel_col = st.columns(2)
-            if confirm_col.button("Yes, overwrite with sample data", width="stretch"):
-                seed_sample_database(db, replace=True)
-                st.cache_data.clear()
-                st.session_state["confirm_load_sample"] = False
-                st.success("Sample league loaded.")
-            if cancel_col.button("Cancel", width="stretch"):
-                st.session_state["confirm_load_sample"] = False
+            if swid or espn_s2 or cookie_header:
+                st.caption(cookie_auth_summary(cookie_header or None, swid or None, espn_s2 or None))
 
-        if col_b.button("Sync ESPN", width="stretch"):
-            try:
-                seasons = [int(part.strip()) for part in seasons_text.split(",") if part.strip()]
-            except ValueError:
-                seasons = []
-                st.error("Seasons must be comma-separated years, like 2021,2022,2023.")
-            if not league_id or not seasons:
-                st.error("League ID and at least one season are required.")
-            else:
+            if st.button("Save league", width="stretch"):
                 try:
-                    config = EspnConfig(
-                        league_id=int(league_id),
-                        seasons=seasons,
-                        swid=swid or None,
-                        espn_s2=espn_s2 or None,
-                        cookie_header=cookie_header or None,
-                    )
-                    with st.spinner("Pulling ESPN history..."):
-                        result = sync_espn_history(config, db)
+                    db.save_league_profile(int(league_id), league_name.strip() or "My League", seasons_text)
                     st.cache_data.clear()
-                    st.success(f"Synced {result['seasons_synced']} season(s).")
-                    incomplete_weeks = result.get("incomplete_weeks") or {}
-                    if incomplete_weeks:
-                        details = "; ".join(
-                            f"{season}: week(s) {', '.join(str(week) for week in weeks)}"
-                            for season, weeks in sorted(incomplete_weeks.items())
-                        )
-                        st.warning(
-                            "Some weekly boxscores failed to load and were skipped, so scoring/injury "
-                            f"data for those weeks may be incomplete ({details}). Try syncing again."
-                        )
+                    st.success("League saved. Not that there's anything wrong with that.")
                 except ValueError:
-                    st.error("League ID must be a number.")
-                except EspnSyncError as exc:
-                    st.error(str(exc))
-                    st.info("Most reliable fix: DevTools -> Network -> reload your ESPN league -> click an ESPN API request -> copy the full `Cookie` request header into the sidebar.")
+                    st.error("League ID must be a number before saving.")
 
-        with st.expander("Local data imports"):
-            auction_file = st.file_uploader(
-                "Auction draft CSV",
-                type=["csv"],
-                help="Headers can be season, player_id/player_name, team_id/manager_name, and auction_value/price.",
-            )
-            if st.button("Save auction prices", width="stretch", disabled=auction_file is None):
-                try:
-                    frame, error = normalize_import(pd.read_csv(auction_file), "auction")
-                    if error:
-                        st.error(error)
-                    else:
-                        db.replace_import_table("auction_values", frame)
-                        st.cache_data.clear()
-                        st.success(f"Saved {len(frame)} auction value row(s).")
-                except Exception as exc:
-                    st.error(f"Could not load auction CSV: {exc}")
+            if st.button("Load sample", width="stretch"):
+                if db.is_empty():
+                    seed_sample_database(db, replace=True)
+                    st.cache_data.clear()
+                    st.success("Sample league loaded. Yada yada yada, you have data.")
+                else:
+                    st.session_state["confirm_load_sample"] = True
 
-            injury_file = st.file_uploader(
-                "Player injury CSV",
-                type=["csv"],
-                help="Headers can be season, week, player_id/player_name, and injury_status/status.",
-            )
-            if st.button("Save injury history", width="stretch", disabled=injury_file is None):
-                try:
-                    frame, error = normalize_import(pd.read_csv(injury_file), "injury")
-                    if error:
-                        st.error(error)
-                    else:
-                        db.replace_import_table("injuries", frame)
-                        st.cache_data.clear()
-                        st.success(f"Saved {len(frame)} injury row(s).")
-                except Exception as exc:
-                    st.error(f"Could not load injury CSV: {exc}")
+            if st.session_state.get("confirm_load_sample"):
+                st.warning(
+                    "Serenity now! This will permanently replace your current league data "
+                    "(synced ESPN history, uploaded CSVs, etc.) with generated sample data."
+                )
+                confirm_col, cancel_col = st.columns(2)
+                if confirm_col.button("Yes, overwrite with sample data", width="stretch"):
+                    seed_sample_database(db, replace=True)
+                    st.cache_data.clear()
+                    st.session_state["confirm_load_sample"] = False
+                    st.success("Sample league loaded.")
+                if cancel_col.button("Cancel", width="stretch"):
+                    st.session_state["confirm_load_sample"] = False
 
-            if st.button("Pull nflverse injuries", width="stretch"):
+            if st.button("Sync ESPN", width="stretch"):
                 try:
                     seasons = [int(part.strip()) for part in seasons_text.split(",") if part.strip()]
-                    with st.spinner("Loading public NFL injury reports..."):
-                        frame, source = fetch_nflverse_injuries(seasons)
-                    for stale_source in {"nfl_data_py", "nflverse_csv"} - {source}:
-                        db.replace_source_rows("injuries", stale_source, pd.DataFrame())
-                    db.replace_source_rows("injuries", source, frame)
-                    st.cache_data.clear()
-                    st.success(f"Saved {len(frame)} public injury row(s) from {source}.")
                 except ValueError:
+                    seasons = []
                     st.error("Seasons must be comma-separated years, like 2021,2022,2023.")
-                except InjurySourceError as exc:
-                    st.error(str(exc))
+                if not league_id or not seasons:
+                    st.error("League ID and at least one season are required.")
+                else:
+                    try:
+                        config = EspnConfig(
+                            league_id=int(league_id),
+                            seasons=seasons,
+                            swid=swid or None,
+                            espn_s2=espn_s2 or None,
+                            cookie_header=cookie_header or None,
+                        )
+                        with st.spinner("Pulling ESPN history... master of your domain any second now."):
+                            result = sync_espn_history(config, db)
+                        st.cache_data.clear()
+                        st.success(f"Synced {result['seasons_synced']} season(s).")
+                        incomplete_weeks = result.get("incomplete_weeks") or {}
+                        if incomplete_weeks:
+                            details = "; ".join(
+                                f"{season}: week(s) {', '.join(str(week) for week in weeks)}"
+                                for season, weeks in sorted(incomplete_weeks.items())
+                            )
+                            st.warning(
+                                "Some weekly boxscores failed to load and were skipped, so scoring/injury "
+                                f"data for those weeks may be incomplete ({details}). Try syncing again."
+                            )
+                    except ValueError:
+                        st.error("League ID must be a number.")
+                    except EspnSyncError as exc:
+                        st.error(str(exc))
+                        st.info("Most reliable fix: DevTools -> Network -> reload your ESPN league -> click an ESPN API request -> copy the full `Cookie` request header into the sidebar.")
 
-        seasons = sorted(tables["teams"]["season"].dropna().unique().tolist()) if not tables["teams"].empty else []
-        selected_seasons = st.multiselect("Visible seasons", seasons, default=seasons)
+            with st.expander("Local data imports"):
+                auction_file = st.file_uploader(
+                    "Auction draft CSV",
+                    type=["csv"],
+                    help="Headers can be season, player_id/player_name, team_id/manager_name, and auction_value/price.",
+                )
+                if st.button("Save auction prices", width="stretch", disabled=auction_file is None):
+                    try:
+                        frame, error = normalize_import(pd.read_csv(auction_file), "auction")
+                        if error:
+                            st.error(error)
+                        else:
+                            db.replace_import_table("auction_values", frame)
+                            st.cache_data.clear()
+                            st.success(f"Saved {len(frame)} auction value row(s).")
+                    except Exception as exc:
+                        st.error(f"Could not load auction CSV: {exc}")
 
-        managers = sorted(tables["teams"]["manager_name"].dropna().unique().tolist()) if not tables["teams"].empty else []
-        selected_managers = st.multiselect("Managers", managers, default=managers)
+                injury_file = st.file_uploader(
+                    "Player injury CSV",
+                    type=["csv"],
+                    help="Headers can be season, week, player_id/player_name, and injury_status/status.",
+                )
+                if st.button("Save injury history", width="stretch", disabled=injury_file is None):
+                    try:
+                        frame, error = normalize_import(pd.read_csv(injury_file), "injury")
+                        if error:
+                            st.error(error)
+                        else:
+                            db.replace_import_table("injuries", frame)
+                            st.cache_data.clear()
+                            st.success(f"Saved {len(frame)} injury row(s).")
+                    except Exception as exc:
+                        st.error(f"Could not load injury CSV: {exc}")
+
+                if st.button("Pull nflverse injuries", width="stretch"):
+                    try:
+                        seasons = [int(part.strip()) for part in seasons_text.split(",") if part.strip()]
+                        with st.spinner("Loading public NFL injury reports..."):
+                            frame, source = fetch_nflverse_injuries(seasons)
+                        for stale_source in {"nfl_data_py", "nflverse_csv"} - {source}:
+                            db.replace_source_rows("injuries", stale_source, pd.DataFrame())
+                        db.replace_source_rows("injuries", source, frame)
+                        st.cache_data.clear()
+                        st.success(f"Saved {len(frame)} public injury row(s) from {source}.")
+                    except ValueError:
+                        st.error("Seasons must be comma-separated years, like 2021,2022,2023.")
+                    except InjurySourceError as exc:
+                        st.error(str(exc))
 
         if not tables["teams"].empty:
             with st.expander("Owner display names"):
+                st.caption("Give a manager a new name without erasing their receipts.")
                 aliases: dict[str, str] = {}
                 owners = (
                     tables["teams"][["manager_id", "manager_name"]]
@@ -365,10 +430,10 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
     return selected_seasons, selected_managers
 
 
-def metric_row(records: dict[str, str]) -> None:
+def metric_row(records: list[tuple[str, str, str]]) -> None:
     cols = st.columns(len(records))
-    for col, (label, value) in zip(cols, records.items()):
-        col.metric(label, value)
+    for col, (label, value, help_text) in zip(cols, records):
+        col.metric(label, value, help=help_text)
 
 
 def _color_map(values: pd.Series) -> dict[object, str]:
@@ -376,19 +441,28 @@ def _color_map(values: pd.Series) -> dict[object, str]:
     return {value: COLORWAY[index % len(COLORWAY)] for index, value in enumerate(unique)}
 
 
+def chart_title(headline: str, subtitle: str) -> str:
+    """A Seinfeld-flavored headline over a plain-English subtitle, so the fun name
+    never leaves anyone guessing what the chart actually shows."""
+    return (
+        f"{headline}"
+        f"<br><span style='font-size:12px;font-weight:400;color:{BRAND['festivus_silver']}'>{subtitle}</span>"
+    )
+
+
 def polish_figure(fig: go.Figure) -> go.Figure:
     fig.update_layout(
         template=PLOT_TEMPLATE,
         paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(255,255,255,0.02)",
-        font={"family": "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif", "color": "#E9EEF8"},
-        title_font={"size": 18},
-        margin={"l": 40, "r": 20, "t": 56, "b": 42},
+        plot_bgcolor="rgba(227, 165, 24, 0.03)",
+        font={"family": BODY_FONT, "color": BRAND["cream"]},
+        title_font={"family": DISPLAY_FONT, "size": 20, "color": BRAND["mustard"]},
+        margin={"l": 40, "r": 20, "t": 64, "b": 42},
         legend={"bgcolor": "rgba(0,0,0,0)", "borderwidth": 0},
         hovermode="closest",
     )
-    fig.update_xaxes(gridcolor="rgba(255,255,255,0.08)", zerolinecolor="rgba(255,255,255,0.2)")
-    fig.update_yaxes(gridcolor="rgba(255,255,255,0.08)", zerolinecolor="rgba(255,255,255,0.2)")
+    fig.update_xaxes(gridcolor="rgba(227, 165, 24, 0.12)", zerolinecolor="rgba(227, 165, 24, 0.3)")
+    fig.update_yaxes(gridcolor="rgba(227, 165, 24, 0.12)", zerolinecolor="rgba(227, 165, 24, 0.3)")
     return fig
 
 
@@ -491,38 +565,42 @@ def main() -> None:
         tables[name] = manager_filter(df, selected_managers)
     teams = tables["teams"]
 
-    st.title("League History Dashboard")
-    st.caption("A dashboard for your league's story: draft habits, luck, slot pain, and all-time receipts.")
+    st.title("🥨 The Vault")
+    st.caption("A League About Nothing — draft habits, schedule luck, slot pain, and all-time receipts, for the record.")
 
     if teams.empty:
-        st.info("No league data found. Load sample data or sync an ESPN league from the sidebar.")
+        st.info("No league data yet — yada yada yada. Load the sample league or sync a real one from the sidebar.")
         return
 
     records = all_time_records(tables["matchups"], tables["teams"])
     metric_row(
-        {
-            "Highest score": records.get("highest_score", "n/a"),
-            "Worst loss": records.get("worst_loss", "n/a"),
-            "Longest streak": records.get("longest_win_streak", "n/a"),
-            "Biggest heartbreak": records.get("closest_loss", "n/a"),
-        }
+        [
+            ("Feats of Strength", records.get("highest_score", "n/a"), "Highest single-week score in league history."),
+            ("Serenity Now", records.get("worst_loss", "n/a"), "The lowest score that still somehow took the loss."),
+            ("Master of My Domain", records.get("longest_win_streak", "n/a"), "Longest winning streak in a single season."),
+            ("Shrinkage", records.get("closest_loss", "n/a"), "The closest margin of defeat on record."),
+        ]
     )
 
     tab_luck, tab_h2h, tab_draft, tab_transactions, tab_player, tab_projection, tab_positions, tab_profiles, tab_records = st.tabs(
         [
-            "Schedule Luck",
-            "Head to Head",
-            "Draft Room",
-            "Transactions",
-            "Player Profile",
-            "Projections",
-            "Positions",
-            "Profiles",
-            "Records",
+            "🌌 Bizarro World",
+            "☎️ Hello, Newman",
+            "💼 Vandelay Inc.",
+            "🎁 The Regift",
+            "👔 The Puffy Shirt",
+            "🔮 No Points For You",
+            "🥗 The Big Salad",
+            "🔄 The Opposite",
+            "🏁 The Finale",
         ]
     )
 
     with tab_luck:
+        st.caption(
+            "How much of your record is the schedule's fault, not yours — actual wins vs. what you'd "
+            "get if you played everyone, every week."
+        )
         luck = schedule_luck(tables["matchups"], tables["teams"])
         enriched_luck = injury_luck(
             luck,
@@ -533,7 +611,7 @@ def main() -> None:
             tables["teams"],
         )
         if luck.empty:
-            st.info("No matchup data available.")
+            st.info("No matchup data available yet.")
         else:
             c_luck_a, c_luck_b, c_luck_c = st.columns([1, 1, 1])
             granularity = c_luck_a.multiselect(
@@ -563,7 +641,10 @@ def main() -> None:
                     "actual_win_pct",
                     "all_play_win_pct",
                     "manager_name",
-                    "Schedule Luck: Actual vs All-Play",
+                    chart_title(
+                        "Bizarro World vs. Real World",
+                        "Actual win % vs. all-play win % — the record you'd have if you played everyone, every week.",
+                    ),
                     "Actual win %",
                     "All-play win %",
                     size="injury_value_lost" if "injury_value_lost" in chart_luck.columns else "points_for",
@@ -576,7 +657,7 @@ def main() -> None:
                     "season",
                     score_metric,
                     color_dim,
-                    "Luck Score Over Time",
+                    chart_title("Yada Yada, Over Time", f"{score_metric.replace('_', ' ').title()} across seasons."),
                     "Season",
                     score_metric.replace("_", " ").title(),
                 )
@@ -588,7 +669,7 @@ def main() -> None:
                     x_dim,
                     score_metric,
                     color_dim,
-                    "Schedule Luck Ranked",
+                    chart_title("The Bizarro Leaderboard", f"{score_metric.replace('_', ' ').title()}, ranked."),
                     x_dim.replace("_", " ").title(),
                     score_metric.replace("_", " ").title(),
                 )
@@ -601,6 +682,7 @@ def main() -> None:
             )
 
     with tab_h2h:
+        st.caption("Head-to-head history between any two managers: record, margins, and every meeting week by week.")
         managers = sorted(tables["teams"]["manager_name"].dropna().unique().tolist())
         if len(managers) < 2:
             st.info("Head-to-head history needs at least two managers.")
@@ -625,7 +707,7 @@ def main() -> None:
                     "game_label",
                     "points_for",
                     "manager_name",
-                    f"{manager_a} vs {manager_b}: Scores by Week",
+                    chart_title(f"Hello, {manager_b}.", f"{manager_a} vs. {manager_b} — points scored in every meeting."),
                     "Matchup",
                     "Points",
                 )
@@ -649,6 +731,7 @@ def main() -> None:
                 )
 
     with tab_draft:
+        st.caption("Draft tendencies, hindsight value, and a scorecard for how each draft actually turned out.")
         tendencies = draft_tendencies(tables["draft_picks"], tables["teams"])
         hindsight = draft_hindsight(tables["draft_picks"], tables["roster_scores"], tables["teams"])
         scorecard = draft_scorecard(
@@ -669,7 +752,7 @@ def main() -> None:
                     "manager_name",
                     "early_pick_share",
                     "position",
-                    "Early Draft Tendencies",
+                    chart_title("Draft Day at Vandelay Industries", "Share of each manager's early-round picks by position."),
                     "Manager",
                     "Early pick share",
                 )
@@ -683,7 +766,7 @@ def main() -> None:
                     "manager_name",
                     "draft_value_score",
                     "season",
-                    "Hindsight Draft Value",
+                    chart_title("20/20 Hindsight", "Draft value once the season actually happened."),
                     "Manager",
                     "Hindsight value score",
                 )
@@ -691,13 +774,12 @@ def main() -> None:
                 st.dataframe(hindsight, width="stretch", hide_index=True)
 
         if not scorecard.empty:
-            st.subheader("Draft Scorecard")
             fig = grouped_bar_figure(
                 scorecard,
                 "manager_name",
                 "draft_score",
                 "season",
-                "Draft Score: Risk, Build, Sleepers",
+                chart_title("The Vandelay Scorecard", "Composite draft score: risk avoidance, lineup construction, sleeper value."),
                 "Manager",
                 "Draft score",
             )
@@ -739,6 +821,7 @@ def main() -> None:
                 )
 
     with tab_transactions:
+        st.caption("Waiver adds, trades, and drops — scored by the points they actually produced afterward.")
         scores, details = transaction_scorecard(tables["transactions"], tables["roster_scores"], tables["teams"])
         if scores.empty:
             st.info("No transaction data available.")
@@ -748,7 +831,7 @@ def main() -> None:
                 "manager_name",
                 "transaction_score",
                 "season",
-                "Transaction Score",
+                chart_title("The Regift Report", "Composite transaction score from adds, trades, and drops."),
                 "Manager",
                 "Score",
             )
@@ -775,7 +858,8 @@ def main() -> None:
             else:
                 drops = details[details["score_type"] == "Unfortunate drop"].sort_values("future_points", ascending=False)
                 if not drops.empty:
-                    st.subheader("Unfortunate Drops")
+                    st.subheader("Kramer's Bad Idea")
+                    st.caption("Players you dropped who kept scoring — just not for you.")
                     st.dataframe(
                         drops[
                             [
@@ -793,6 +877,7 @@ def main() -> None:
                     )
 
     with tab_player:
+        st.caption("One manager's season under the spotlight: where their points came from and how each slot performed.")
         managers = sorted(tables["teams"]["manager_name"].dropna().unique().tolist())
         if not managers:
             st.info("Player profile needs team and roster data.")
@@ -821,7 +906,12 @@ def main() -> None:
                                 marker={"colors": COLORWAY},
                             )
                         )
-                        fig.update_layout(title="% of Starter Points by Acquisition Source")
+                        fig.update_layout(
+                            title=chart_title(
+                                "Where'd You Get That?",
+                                "Starter points by how each player was acquired.",
+                            )
+                        )
                         st.plotly_chart(polish_figure(fig))
                         st.dataframe(source_share, width="stretch", hide_index=True)
                 with c_hist:
@@ -843,7 +933,10 @@ def main() -> None:
                         )
                     )
                     fig.update_layout(
-                        title="Weekly Starter Points vs League Median",
+                        title=chart_title(
+                            "You vs. The Field",
+                            "Weekly starter points for this manager vs. the league median that week.",
+                        ),
                         xaxis_title="Points",
                         yaxis_title="Weeks",
                         barmode="overlay",
@@ -867,7 +960,10 @@ def main() -> None:
                             )
                         )
                     fig.update_layout(
-                        title="Slot Performance vs Median",
+                        title=chart_title(
+                            "Slot Machine",
+                            "Points above/below the league median at each roster slot.",
+                        ),
                         xaxis_title="Points over/under median",
                         yaxis_title="Weeks",
                         barmode="overlay",
@@ -876,6 +972,7 @@ def main() -> None:
                     st.dataframe(slot_view, width="stretch", hide_index=True)
 
     with tab_projection:
+        st.caption("Actual points vs. what was projected — who beats their projections, and by how much.")
         projection = projection_performance(tables["roster_scores"], tables["teams"])
         matrix = projection_matchup_matrix(tables["matchups"], tables["roster_scores"], tables["teams"])
         if projection.empty:
@@ -902,7 +999,7 @@ def main() -> None:
                     "projected_points",
                     "actual_points",
                     "manager_name",
-                    "Actual vs Projected Scoring",
+                    chart_title("Beating the Odds", "Actual points vs. projected — above the line means you overperformed."),
                     "Projected points",
                     "Actual points",
                 )
@@ -933,7 +1030,10 @@ def main() -> None:
                     )
                 )
                 fig.update_layout(
-                    title="Manager Projection Overperformance",
+                    title=chart_title(
+                        "The Overperformers",
+                        "Average points over projection per manager, colored by how often they beat it.",
+                    ),
                     xaxis_title="Manager",
                     yaxis_title="Avg points over projection",
                 )
@@ -949,7 +1049,10 @@ def main() -> None:
                     )
                 )
                 fig.update_layout(
-                    title="Projected Favorite Buckets",
+                    title=chart_title(
+                        "Big Dog, Little Dog",
+                        "Actual win rate by how big a favorite or underdog you were projected to be.",
+                    ),
                     xaxis_title="Projected matchup bucket",
                     yaxis_title="Actual win rate",
                     showlegend=False,
@@ -973,6 +1076,7 @@ def main() -> None:
             )
 
     with tab_positions:
+        st.caption("Average points per week at every roster position, mixed together by manager.")
         positional = positional_performance(tables["roster_scores"], tables["teams"])
         if positional.empty:
             st.info("No roster slot data available.")
@@ -992,11 +1096,16 @@ def main() -> None:
                     colorbar={"title": "Pts/week"},
                 )
             )
-            fig.update_layout(title="Positional Performance", xaxis_title="Position", yaxis_title="Manager")
+            fig.update_layout(
+                title=chart_title("The Big Salad Breakdown", "Average points per week at each roster position, by manager."),
+                xaxis_title="Position",
+                yaxis_title="Manager",
+            )
             st.plotly_chart(polish_figure(fig))
             st.dataframe(positional, width="stretch", hide_index=True)
 
     with tab_profiles:
+        st.caption("Manager behavior: waiver-wire hustle vs. points wasted on the bench.")
         profiles = manager_profiles(tables["transactions"], tables["roster_scores"], tables["teams"])
         if profiles.empty:
             st.info("No transaction or bench data available.")
@@ -1006,7 +1115,7 @@ def main() -> None:
                 "waiver_adds",
                 "bench_points_left",
                 "manager_name",
-                "Manager Activity vs Lineup Waste",
+                chart_title("Hustle vs. Waste", "Waiver-wire activity vs. points left stranded on the bench."),
                 "Waiver adds",
                 "Bench points left",
                 size="trades",
@@ -1015,9 +1124,16 @@ def main() -> None:
             st.dataframe(profiles, width="stretch", hide_index=True)
 
     with tab_records:
+        st.caption("Every all-time record in one place, for when someone needs the receipts.")
         st.subheader("All-Time Receipts")
+        record_labels = {
+            "highest_score": "Feats of Strength (highest score)",
+            "worst_loss": "Serenity Now (worst loss)",
+            "longest_win_streak": "Master of My Domain (longest win streak)",
+            "closest_loss": "Shrinkage (closest loss)",
+        }
         for key, value in records.items():
-            st.write(f"**{key.replace('_', ' ').title()}**: {value}")
+            st.write(f"**{record_labels.get(key, key.replace('_', ' ').title())}**: {value}")
 
 
 if __name__ == "__main__":
