@@ -104,7 +104,16 @@ st.markdown(
         border-radius: 8px;
         padding: 14px 16px;
     }}
-    div[data-testid="stMetricLabel"] {{ color: {BRAND["festivus_silver"]}; }}
+    [data-testid="stMetricLabel"], [data-testid="stMetricLabel"] * {{
+        color: {BRAND["festivus_silver"]};
+        white-space: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        display: block !important;
+        height: auto !important;
+        max-height: none !important;
+        -webkit-line-clamp: unset !important;
+    }}
     div[data-testid="stMetricValue"], div[data-testid="stMetricValue"] * {{
         white-space: normal !important;
         overflow: visible !important;
@@ -139,6 +148,37 @@ st.markdown(
         color: {BRAND["festivus_silver"]};
         font-style: italic;
         margin-top: -0.6rem;
+    }}
+    div[data-testid="stVerticalBlock"][style*="border"] {{
+        background: rgba(227, 165, 24, 0.035);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+    }}
+    .vault-chart-head {{
+        font-family: {DISPLAY_FONT};
+        font-size: 1.15rem;
+        font-weight: 600;
+        color: {BRAND["mustard"]};
+        line-height: 1.3;
+        margin-bottom: 1px;
+    }}
+    .vault-chart-sub {{
+        font-family: {BODY_FONT};
+        font-size: 0.85rem;
+        color: {BRAND["festivus_silver"]};
+        opacity: 0.85;
+        margin-bottom: 10px;
+        line-height: 1.35;
+    }}
+    /* Below this width, side-by-side columns get too cramped to read (control
+       widgets truncate, chart cards squeeze) - let them stack instead. */
+    @media (max-width: 960px) {{
+        div[data-testid="stHorizontalBlock"] {{
+            flex-wrap: wrap !important;
+        }}
+        div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {{
+            min-width: 100% !important;
+            flex: 1 1 100% !important;
+        }}
     }}
     </style>
     """,
@@ -535,7 +575,18 @@ def format_percent(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
 def show_table(df: pd.DataFrame, label: str = "Show data table", overrides: dict[str, str] | None = None) -> None:
     """A collapsed expander for supporting detail, so the chart above stays the main event."""
     with st.expander(f"📋 {label} ({len(df)} rows)"):
-        st.dataframe(humanize_columns(df, overrides), width="stretch", hide_index=True)
+        display_df = humanize_columns(df, overrides)
+        # Cap the visible height so a table with hundreds of rows scrolls internally
+        # instead of stretching the whole page - past ~11 rows it just scrolls.
+        st.dataframe(display_df, width="stretch", hide_index=True, height=min(38 * (len(display_df) + 1) + 3, 420))
+        if not display_df.empty:
+            st.download_button(
+                "⬇️ Download CSV",
+                display_df.to_csv(index=False).encode("utf-8"),
+                file_name=f"{label.lower().replace(' ', '_')}.csv",
+                mime="text/csv",
+                key=f"download_{label}_{len(display_df)}",
+            )
 
 
 def _color_map(values: pd.Series) -> dict[object, str]:
@@ -543,24 +594,40 @@ def _color_map(values: pd.Series) -> dict[object, str]:
     return {value: COLORWAY[index % len(COLORWAY)] for index, value in enumerate(unique)}
 
 
-def chart_title(headline: str, subtitle: str) -> str:
-    """A Seinfeld-flavored headline over a plain-English subtitle, so the fun name
-    never leaves anyone guessing what the chart actually shows."""
-    return (
-        f"{headline}"
-        f"<br><span style='font-size:12px;font-weight:400;color:{BRAND['festivus_silver']}'>{subtitle}</span>"
+def render_chart_header(headline: str, subtitle: str) -> None:
+    """A Seinfeld-flavored headline over a plain-English subtitle, rendered as normal
+    wrapping HTML above the chart - unlike Plotly's own title, this never clips or
+    gets cut off in a narrow column."""
+    st.markdown(
+        f"<div class='vault-chart-head'>{headline}</div><div class='vault-chart-sub'>{subtitle}</div>",
+        unsafe_allow_html=True,
     )
 
 
 def polish_figure(fig: go.Figure) -> go.Figure:
+    # Most charts render their headline via render_chart_header() now, not a Plotly
+    # title - but a few (small multiples, colorbar-only figures) still set one via
+    # update_layout(title=...) before calling this. Preserve that text explicitly;
+    # otherwise setting title_font alone with no title.text renders as "undefined".
+    existing_title = fig.layout.title.text if fig.layout.title is not None else None
     fig.update_layout(
         template=PLOT_TEMPLATE,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(227, 165, 24, 0.03)",
         font={"family": BODY_FONT, "color": BRAND["cream"]},
-        title_font={"family": DISPLAY_FONT, "size": 20, "color": BRAND["mustard"]},
-        margin={"l": 40, "r": 20, "t": 64, "b": 42},
-        legend={"bgcolor": "rgba(0,0,0,0)", "borderwidth": 0},
+        title={"text": existing_title or "", "font": {"family": DISPLAY_FONT, "size": 20, "color": BRAND["mustard"]}},
+        margin={"l": 40, "r": 20, "t": 24, "b": 42},
+        # Horizontal, below the plot: a right-side legend eats plot width, which
+        # gets painful once a chart is squeezed into half a card.
+        legend={
+            "bgcolor": "rgba(0,0,0,0)",
+            "borderwidth": 0,
+            "orientation": "h",
+            "yanchor": "top",
+            "y": -0.18,
+            "xanchor": "center",
+            "x": 0.5,
+        },
         hovermode="closest",
     )
     fig.update_xaxes(gridcolor="rgba(227, 165, 24, 0.12)", zerolinecolor="rgba(227, 165, 24, 0.3)")
@@ -629,6 +696,9 @@ def grouped_bar_figure(
 ) -> go.Figure:
     fig = go.Figure()
     colors = _color_map(df[color])
+    # Highest-total category first, so a dense chart (many managers x many seasons)
+    # reads as a leaderboard instead of whatever order rows happened to arrive in.
+    category_order = df.groupby(x)[y].sum().sort_values(ascending=False).index.tolist()
     for value, group in df.groupby(color, dropna=False):
         fig.add_trace(
             go.Bar(
@@ -642,6 +712,7 @@ def grouped_bar_figure(
         title=title,
         xaxis_title=x_title,
         yaxis_title=y_title,
+        xaxis={"categoryorder": "array", "categoryarray": category_order},
         barmode=barmode,
         legend_title=color.replace("_", " ").title(),
     )
@@ -810,44 +881,53 @@ def main() -> None:
                 chart_luck = enriched_luck if not enriched_luck.empty else luck
                 aggregated_luck = aggregate_luck(chart_luck, granularity)
                 if view_mode == "Actual vs all-play":
+                    render_chart_header(
+                        "Bizarro World vs. Real World",
+                        "Actual win % vs. all-play win % — the record you'd have if you played everyone, every week.",
+                    )
                     fig = scatter_figure(
                         chart_luck,
                         "actual_win_pct",
                         "all_play_win_pct",
                         "manager_name",
-                        chart_title(
-                            "Bizarro World vs. Real World",
-                            "Actual win % vs. all-play win % — the record you'd have if you played everyone, every week.",
-                        ),
+                        "",
                         "Actual win %",
                         "All-play win %",
                         size="injury_value_lost" if "injury_value_lost" in chart_luck.columns else "points_for",
                     )
                     fig.add_shape(type="line", x0=0, y0=0, x1=1, y1=1, line={"dash": "dash", "color": "#AAB3C5"})
+                    st.plotly_chart(fig)
+                    st.caption(
+                        "The dashed diagonal is zero luck: your actual win % equals your all-play win %. "
+                        "Above the line means a friendlier schedule than your scoring deserved; below means a tougher one."
+                    )
                 elif view_mode == "Trend" and "season" in aggregated_luck.columns and len(granularity) > 1:
                     color_dim = "manager_name" if "manager_name" in aggregated_luck.columns else granularity[-1]
+                    render_chart_header("Yada Yada, Over Time", f"{score_metric.replace('_', ' ').title()} across seasons.")
                     fig = line_figure(
                         aggregated_luck,
                         "season",
                         score_metric,
                         color_dim,
-                        chart_title("Yada Yada, Over Time", f"{score_metric.replace('_', ' ').title()} across seasons."),
+                        "",
                         "Season",
                         score_metric.replace("_", " ").title(),
                     )
+                    st.plotly_chart(fig)
                 else:
                     x_dim = "manager_name" if "manager_name" in aggregated_luck.columns else (granularity[0] if granularity else "season")
                     color_dim = "season" if "season" in aggregated_luck.columns and x_dim != "season" else x_dim
+                    render_chart_header("The Bizarro Leaderboard", f"{score_metric.replace('_', ' ').title()}, ranked.")
                     fig = grouped_bar_figure(
                         aggregated_luck.sort_values(score_metric, ascending=score_metric == "injury_value_lost"),
                         x_dim,
                         score_metric,
                         color_dim,
-                        chart_title("The Bizarro Leaderboard", f"{score_metric.replace('_', ' ').title()}, ranked."),
+                        "",
                         x_dim.replace("_", " ").title(),
                         score_metric.replace("_", " ").title(),
                     )
-                st.plotly_chart(fig)
+                    st.plotly_chart(fig)
                 show_table(format_percent(aggregated_luck, ["all_play_win_pct", "actual_win_pct"]), "Show luck numbers")
 
     with tab_h2h:
@@ -872,12 +952,13 @@ def main() -> None:
                             f"{int(row.wins)}-{int(row.losses)}",
                             f"{row.avg_margin:+.2f} avg margin",
                         )
+                    render_chart_header(f"Hello, {manager_b}.", f"{manager_a} vs. {manager_b} — points scored in every meeting.")
                     fig = line_figure(
                         h2h_games,
                         "game_label",
                         "points_for",
                         "manager_name",
-                        chart_title(f"Hello, {manager_b}.", f"{manager_a} vs. {manager_b} — points scored in every meeting."),
+                        "",
                         "Matchup",
                         "Points",
                     )
@@ -945,12 +1026,13 @@ def main() -> None:
                 if tendencies_view.empty:
                     st.info("No draft data available.")
                 else:
+                    render_chart_header("Draft Day at Vandelay Industries", "Position mix of each manager's early-round picks.")
                     fig = grouped_bar_figure(
                         tendencies_view,
                         "manager_name",
                         "early_pick_share",
                         "position",
-                        chart_title("Draft Day at Vandelay Industries", "Position mix of each manager's early-round picks."),
+                        "",
                         "Manager",
                         "Share of early picks",
                         barmode="stack",
@@ -962,11 +1044,12 @@ def main() -> None:
                 if hindsight_view.empty:
                     st.info("Hindsight draft grades need draft picks plus player scoring lines.")
                 else:
+                    render_chart_header("20/20 Hindsight", "Draft value once the season actually happened - higher is better.")
                     fig = ranked_bar_figure(
                         hindsight_view,
                         "manager_name",
                         "draft_value_score",
-                        chart_title("20/20 Hindsight", "Draft value once the season actually happened - higher is better."),
+                        "",
                         "Manager",
                         "Hindsight value score",
                     )
@@ -975,11 +1058,12 @@ def main() -> None:
 
         if not scorecard_view.empty:
             with st.container(border=True):
+                render_chart_header("The Vandelay Scorecard", "Composite draft score: risk avoidance, lineup construction, sleeper value.")
                 fig = ranked_bar_figure(
                     scorecard_view,
                     "manager_name",
                     "draft_score",
-                    chart_title("The Vandelay Scorecard", "Composite draft score: risk avoidance, lineup construction, sleeper value."),
+                    "",
                     "Manager",
                     "Draft score",
                 )
@@ -1017,12 +1101,13 @@ def main() -> None:
             st.info("No transaction data available.")
         else:
             with st.container(border=True):
+                render_chart_header("The Regift Report", "Composite transaction score from adds, trades, and drops.")
                 fig = grouped_bar_figure(
                     scores,
                     "manager_name",
                     "transaction_score",
                     "season",
-                    chart_title("The Regift Report", "Composite transaction score from adds, trades, and drops."),
+                    "",
                     "Manager",
                     "Score",
                 )
@@ -1082,18 +1167,13 @@ def main() -> None:
                         if source_share.empty:
                             st.info("No acquisition source split available.")
                         else:
+                            render_chart_header("Where'd You Get That?", "Starter points by how each player was acquired.")
                             fig = go.Figure(
                                 go.Pie(
                                     labels=source_share["acquisition_source"],
                                     values=source_share["points"],
                                     hole=0.48,
                                     marker={"colors": COLORWAY},
-                                )
-                            )
-                            fig.update_layout(
-                                title=chart_title(
-                                    "Where'd You Get That?",
-                                    "Starter points by how each player was acquired.",
                                 )
                             )
                             st.plotly_chart(polish_figure(fig))
@@ -1104,6 +1184,9 @@ def main() -> None:
                             )
                 with c_hist:
                     with st.container(border=True):
+                        render_chart_header(
+                            "You vs. The Field", "Weekly starter points for this manager vs. the league median that week."
+                        )
                         fig = go.Figure()
                         fig.add_trace(
                             go.Histogram(
@@ -1122,10 +1205,6 @@ def main() -> None:
                             )
                         )
                         fig.update_layout(
-                            title=chart_title(
-                                "You vs. The Field",
-                                "Weekly starter points for this manager vs. the league median that week.",
-                            ),
                             xaxis_title="Points",
                             yaxis_title="Weeks",
                             barmode="overlay",
@@ -1143,6 +1222,10 @@ def main() -> None:
                                 on="acquisition_source",
                                 how="outer",
                             ).fillna(0)
+                            render_chart_header(
+                                "You vs. Everyone Else",
+                                "This manager's acquisition-source point share vs. the league average.",
+                            )
                             fig = go.Figure()
                             fig.add_trace(
                                 go.Bar(
@@ -1161,10 +1244,6 @@ def main() -> None:
                                 )
                             )
                             fig.update_layout(
-                                title=chart_title(
-                                    "You vs. Everyone Else",
-                                    "This manager's acquisition-source point share vs. the league average.",
-                                ),
                                 xaxis_title="Acquisition source",
                                 yaxis_title="Share of starter points",
                                 barmode="group",
@@ -1246,12 +1325,13 @@ def main() -> None:
 
                 c1, c2 = st.columns([1, 1])
                 with c1:
+                    render_chart_header("Beating the Odds", "Actual points vs. projected — above the line means you overperformed.")
                     fig = scatter_figure(
                         projection,
                         "projected_points",
                         "actual_points",
                         "manager_name",
-                        chart_title("Beating the Odds", "Actual points vs. projected — above the line means you overperformed."),
+                        "",
                         "Projected points",
                         "Actual points",
                     )
@@ -1277,6 +1357,9 @@ def main() -> None:
                         )
                         .round({"average_delta": 2, "beat_projection_pct": 3})
                     )
+                    render_chart_header(
+                        "The Overperformers", "Average points over projection per manager, colored by how often they beat it."
+                    )
                     fig = go.Figure(
                         go.Bar(
                             x=beat.sort_values("average_delta", ascending=False)["manager_name"],
@@ -1286,10 +1369,6 @@ def main() -> None:
                         )
                     )
                     fig.update_layout(
-                        title=chart_title(
-                            "The Overperformers",
-                            "Average points over projection per manager, colored by how often they beat it.",
-                        ),
                         xaxis_title="Manager",
                         yaxis_title="Avg points over projection",
                     )
@@ -1297,6 +1376,9 @@ def main() -> None:
 
             if not matrix.empty:
                 with st.container(border=True):
+                    render_chart_header(
+                        "Big Dog, Little Dog", "Actual win rate by how big a favorite or underdog you were projected to be."
+                    )
                     wins = matrix[matrix["result"] == "Win"]
                     fig = go.Figure(
                         go.Bar(
@@ -1306,10 +1388,6 @@ def main() -> None:
                         )
                     )
                     fig.update_layout(
-                        title=chart_title(
-                            "Big Dog, Little Dog",
-                            "Actual win rate by how big a favorite or underdog you were projected to be.",
-                        ),
                         xaxis_title="Projected matchup bucket",
                         yaxis_title="Actual win rate",
                         showlegend=False,
@@ -1369,12 +1447,12 @@ def main() -> None:
                     )
                 )
                 fig.update_layout(
-                    title=chart_title(
-                        "The Big Salad Breakdown",
-                        "Points/week by position - color shows rank within that position, not raw magnitude.",
-                    ),
                     xaxis_title="Position",
                     yaxis_title="Manager",
+                )
+                render_chart_header(
+                    "The Big Salad Breakdown",
+                    "Points/week by position - color shows rank within that position, not raw magnitude.",
                 )
                 st.plotly_chart(polish_figure(fig))
                 show_table(positional, "Show position numbers")
@@ -1386,12 +1464,13 @@ def main() -> None:
             st.info("No transaction or bench data available.")
         else:
             with st.container(border=True):
+                render_chart_header("Hustle vs. Waste", "Waiver-wire activity vs. points left stranded on the bench.")
                 fig = scatter_figure(
                     profiles,
                     "waiver_adds",
                     "bench_points_left",
                     "manager_name",
-                    chart_title("Hustle vs. Waste", "Waiver-wire activity vs. points left stranded on the bench."),
+                    "",
                     "Waiver adds",
                     "Bench points left",
                     size="trades",
