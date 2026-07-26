@@ -50,7 +50,7 @@ def seed_sample_database(db: Database, replace: bool = True) -> None:
             if round_no % 2 == 0:
                 order.reverse()
             for team_id in order:
-                bias = {1: "RB", 2: "WR", 3: "QB", 4: "TE"}.get(team_id)
+                bias = {1: "RB", 2: "WR", 3: "QB", 4: "TE"}.get(team_id, rng.choice(POSITIONS))
                 position = bias if round_no <= 3 and rng.random() < 0.5 else rng.choice(POSITIONS)
                 player_id = season * 100000 + pick_no
                 pick = {

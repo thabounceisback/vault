@@ -252,6 +252,41 @@ def head_to_head_history(matchups: pd.DataFrame, teams: pd.DataFrame, manager_a:
     return selected, pd.DataFrame(summary_rows)
 
 
+def head_to_head_game_table(games: pd.DataFrame, manager_a: str, manager_b: str) -> pd.DataFrame:
+    """One row per game (not one row per team-perspective) for display purposes.
+
+    `games` (the first frame returned by `head_to_head_history`) has two rows per
+    game - one from each manager's perspective - which is what the summary/chart
+    need, but reads as duplicated games in a detail table.
+    """
+    if games.empty:
+        return pd.DataFrame()
+    rows = games[games["manager_name"] == manager_a].copy()
+    if rows.empty:
+        return pd.DataFrame()
+    rows = rows.rename(
+        columns={
+            "team_name": f"{manager_a}_team",
+            "points_for": f"{manager_a}_points",
+            "opponent_team_name": f"{manager_b}_team",
+            "points_against": f"{manager_b}_points",
+        }
+    )
+    rows["winner"] = rows["win"].map({1: manager_a, 0: manager_b})
+    return rows[
+        [
+            "season",
+            "week",
+            f"{manager_a}_team",
+            f"{manager_a}_points",
+            f"{manager_b}_team",
+            f"{manager_b}_points",
+            "margin",
+            "winner",
+        ]
+    ].sort_values(["season", "week"])
+
+
 def draft_tendencies(draft_picks: pd.DataFrame, teams: pd.DataFrame) -> pd.DataFrame:
     if draft_picks.empty:
         return pd.DataFrame()
@@ -393,6 +428,10 @@ def positional_performance(roster_scores: pd.DataFrame, teams: pd.DataFrame) -> 
     if roster_scores.empty:
         return pd.DataFrame()
     starters = roster_scores[roster_scores["is_starter"] == 1].copy()
+    # Bucket by "Flex" (not the underlying position) whenever a player started in a flex
+    # slot, so flex usage shows up as its own column instead of being folded into
+    # whatever real position happened to fill it that week.
+    starters["position"] = starters["slot"].where(starters["slot"] == "Flex", starters["position"])
     result = (
         starters.groupby(["season", "team_id", "position"], dropna=False)
         .agg(slot_points=("points", "sum"), weeks=("week", "nunique"))
@@ -555,6 +594,43 @@ def player_profile_frames(
     by_slot = by_slot.merge(median_slot, on=["season", "week", "slot_role"], how="left")
     by_slot["delta_to_median"] = (by_slot["manager_points"] - by_slot["league_median"]).round(2)
     return source_share, weekly, by_slot
+
+
+def acquisition_source_league_average(
+    roster_scores: pd.DataFrame,
+    teams: pd.DataFrame,
+    draft_picks: pd.DataFrame,
+    transactions: pd.DataFrame,
+) -> pd.DataFrame:
+    """Average acquisition-source point share across every manager, for benchmarking one manager against the field.
+
+    Each manager's shares are zero-filled across every source seen league-wide before
+    averaging, so a manager who got none of their points from trades (say) correctly
+    pulls the trade average down instead of being silently excluded from it.
+    """
+    if roster_scores.empty or teams.empty:
+        return pd.DataFrame()
+    manager_shares: dict[str, dict[str, float]] = {}
+    all_sources: set[str] = set()
+    for manager in teams["manager_name"].dropna().unique().tolist():
+        source_share, _weekly, _by_slot = player_profile_frames(manager, roster_scores, teams, draft_picks, transactions)
+        if source_share.empty:
+            continue
+        shares = dict(zip(source_share["acquisition_source"], source_share["point_share"]))
+        manager_shares[manager] = shares
+        all_sources.update(shares.keys())
+    if not manager_shares:
+        return pd.DataFrame()
+    rows = [
+        {
+            "acquisition_source": source,
+            "point_share": round(
+                sum(shares.get(source, 0.0) for shares in manager_shares.values()) / len(manager_shares), 3
+            ),
+        }
+        for source in sorted(all_sources)
+    ]
+    return pd.DataFrame(rows)
 
 
 def projection_performance(roster_scores: pd.DataFrame, teams: pd.DataFrame) -> pd.DataFrame:
@@ -739,4 +815,98 @@ def all_time_records(matchups: pd.DataFrame, teams: pd.DataFrame) -> dict[str, s
         "worst_loss": worst_loss,
         "closest_loss": closest_loss,
         "longest_win_streak": longest[0],
+    }
+
+
+def _games_with_opponents(matchups: pd.DataFrame, teams: pd.DataFrame) -> pd.DataFrame:
+    if matchups.empty or teams.empty:
+        return pd.DataFrame()
+    team_lookup = teams[["season", "team_id", "manager_name", "team_name"]].drop_duplicates()
+    games = matchups.merge(team_lookup, on=["season", "team_id"], how="inner")
+    opponent_lookup = team_lookup.rename(
+        columns={
+            "team_id": "opponent_id",
+            "manager_name": "opponent_manager_name",
+            "team_name": "opponent_team_name",
+        }
+    )
+    return games.merge(opponent_lookup, on=["season", "opponent_id"], how="inner")
+
+
+def all_time_leaderboards(matchups: pd.DataFrame, teams: pd.DataFrame, top_n: int = 5) -> dict[str, pd.DataFrame]:
+    """Top-N leaderboards for the Finale tab - richer than the single-record summary in all_time_records."""
+    games = _games_with_opponents(matchups, teams)
+    if games.empty:
+        return {}
+    games["margin"] = (games["points_for"] - games["points_against"]).abs()
+
+    game_cols = ["season", "week", "manager_name", "team_name", "points_for", "opponent_manager_name", "points_against"]
+    highest_scores = games.sort_values("points_for", ascending=False).head(top_n)[game_cols].reset_index(drop=True)
+
+    losses = games[games["win"] == 0]
+    worst_losses = losses.sort_values("points_for", ascending=True).head(top_n)[game_cols].reset_index(drop=True)
+
+    # One row per unique game (not per team-perspective) for margin-based leaderboards,
+    # since every game otherwise appears twice with an identical (symmetric) margin.
+    unique_games = games.drop_duplicates(subset=["season", "week", "matchup_id"], keep="first")
+    margin_cols = ["season", "week", "manager_name", "points_for", "opponent_manager_name", "points_against", "margin"]
+    closest_games = unique_games.sort_values("margin", ascending=True).head(top_n)[margin_cols].reset_index(drop=True)
+    biggest_blowouts = unique_games.sort_values("margin", ascending=False).head(top_n)[margin_cols].reset_index(drop=True)
+
+    streak_rows = []
+    for (season, _team_id), group in games.sort_values(["season", "week"]).groupby(["season", "team_id"]):
+        manager = group["manager_name"].iloc[0]
+        best_win_streak = best_loss_streak = win_streak = loss_streak = 0
+        for win in group["win"]:
+            if win:
+                win_streak += 1
+                loss_streak = 0
+            else:
+                loss_streak += 1
+                win_streak = 0
+            best_win_streak = max(best_win_streak, win_streak)
+            best_loss_streak = max(best_loss_streak, loss_streak)
+        streak_rows.append(
+            {
+                "season": season,
+                "manager_name": manager,
+                "win_streak": best_win_streak,
+                "loss_streak": best_loss_streak,
+            }
+        )
+    streaks = pd.DataFrame(streak_rows)
+    longest_win_streaks = (
+        streaks[streaks["win_streak"] > 0]
+        .sort_values("win_streak", ascending=False)
+        .head(top_n)[["manager_name", "season", "win_streak"]]
+        .reset_index(drop=True)
+        if not streaks.empty
+        else pd.DataFrame()
+    )
+    longest_loss_streaks = (
+        streaks[streaks["loss_streak"] > 0]
+        .sort_values("loss_streak", ascending=False)
+        .head(top_n)[["manager_name", "season", "loss_streak"]]
+        .reset_index(drop=True)
+        if not streaks.empty
+        else pd.DataFrame()
+    )
+
+    best_season_totals = (
+        games.groupby(["season", "manager_name", "team_name"], as_index=False)["points_for"]
+        .sum()
+        .sort_values("points_for", ascending=False)
+        .head(top_n)
+        .round({"points_for": 1})
+        .reset_index(drop=True)
+    )
+
+    return {
+        "highest_scores": highest_scores,
+        "worst_losses": worst_losses,
+        "closest_games": closest_games,
+        "biggest_blowouts": biggest_blowouts,
+        "longest_win_streaks": longest_win_streaks,
+        "longest_loss_streaks": longest_loss_streaks,
+        "best_season_totals": best_season_totals,
     }
