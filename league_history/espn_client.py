@@ -48,6 +48,7 @@ class EspnSyncError(RuntimeError):
 class EspnClient:
     def __init__(self, config: EspnConfig) -> None:
         self.config = config
+        self.failed_weeks: dict[int, list[int]] = {}
         self.session = requests.Session()
         cookie_header = _clean_cookie_header(config.cookie_header)
         self.session.headers.update(
@@ -79,7 +80,7 @@ class EspnClient:
         urls = self._modern_urls(season)
         params = self._season_params()
         response = self._get_first_available(urls, params=params)
-        if response.status_code == 404:
+        if response.status_code == 404 or response.status_code >= 500:
             urls = self._legacy_urls()
             params = [("seasonId", str(season)), *self._season_params()]
             response = self._get_first_available(urls, params=params)
@@ -178,12 +179,14 @@ class EspnClient:
                 params=params,
             )
             if response.status_code >= 400 or response.is_redirect:
+                self.failed_weeks.setdefault(season, []).append(week)
                 continue
             try:
                 week_payload = response.json()
                 if isinstance(week_payload, list):
                     week_payload = week_payload[0] if week_payload else {}
             except ValueError:
+                self.failed_weeks.setdefault(season, []).append(week)
                 continue
             for game in week_payload.get("schedule", []) or []:
                 game_week = int(game.get("matchupPeriodId") or game.get("scoringPeriodId") or 0)
@@ -333,9 +336,12 @@ def _game_has_roster_entries(game: dict[str, Any]) -> bool:
 
 
 def _side_entries(side: dict[str, Any]) -> list[dict[str, Any]]:
-    current = side.get("rosterForCurrentScoringPeriod", {}).get("entries", []) or []
+    # rosterForMatchupPeriod reflects what was actually rostered/started during that specific
+    # scoring period; rosterForCurrentScoringPeriod reflects the team's roster as of the API call
+    # and would misattribute today's roster/injury status to past weeks if preferred.
     matchup = side.get("rosterForMatchupPeriod", {}).get("entries", []) or []
-    return current or matchup
+    current = side.get("rosterForCurrentScoringPeriod", {}).get("entries", []) or []
+    return matchup or current
 
 
 def _projected_points(player: dict[str, Any], week: int) -> float | None:
@@ -498,14 +504,16 @@ def normalize_season(season: int, payload: dict[str, Any]) -> dict[str, pd.DataF
     for item in payload.get("transactions", []) or []:
         team_id = item.get("teamId")
         for player in item.get("items", []) or []:
+            player_id = player.get("playerId")
+            looked_up = player_lookup.get(int(player_id), {}) if player_id is not None else {}
             transaction_rows.append(
                 {
                     "season": season,
                     "week": item.get("scoringPeriodId"),
                     "team_id": team_id,
                     "transaction_type": item.get("type"),
-                    "player_id": player.get("playerId"),
-                    "player_name": None,
+                    "player_id": player_id,
+                    "player_name": looked_up.get("fullName"),
                     "counterparty_team_id": item.get("proposedTo"),
                 }
             )
@@ -522,7 +530,7 @@ def normalize_season(season: int, payload: dict[str, Any]) -> dict[str, pd.DataF
     }
 
 
-def sync_espn_history(config: EspnConfig, db: Database) -> dict[str, int]:
+def sync_espn_history(config: EspnConfig, db: Database) -> dict[str, Any]:
     client = EspnClient(config)
     merged: dict[str, list[pd.DataFrame]] = {
         "managers": [],
@@ -545,4 +553,4 @@ def sync_espn_history(config: EspnConfig, db: Database) -> dict[str, int]:
         for name, parts in merged.items()
     }
     db.append_tables(frames, config.seasons)
-    return {"seasons_synced": len(config.seasons)}
+    return {"seasons_synced": len(config.seasons), "incomplete_weeks": client.failed_weeks}

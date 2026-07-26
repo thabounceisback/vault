@@ -157,7 +157,11 @@ def injury_luck(
         out = base.assign(injury_value_lost=0.0, injured_player_weeks=0)
     else:
         hurt["injury_status"] = hurt["injury_status"].fillna("").astype(str)
-        hurt = hurt[hurt["injury_status"].str.contains("OUT|IR|INJURED|DNP|DOUBTFUL", case=False, na=False)].copy()
+        hurt = hurt[
+            hurt["injury_status"].str.contains(
+                r"\b(?:OUT|IR|INJURED|DNP|DOUBTFUL)\b", case=False, na=False, regex=True
+            )
+        ].copy()
         hurt["player_key"] = hurt["player_name"].fillna("").str.strip().str.lower()
         hurt = hurt.drop_duplicates(["season", "week", "player_id", "player_key"])
         if hurt.empty:
@@ -294,7 +298,7 @@ def draft_hindsight(draft_picks: pd.DataFrame, roster_scores: pd.DataFrame, team
 
 def _score_within_season(df: pd.DataFrame, column: str, higher_is_better: bool = True) -> pd.Series:
     values = pd.to_numeric(df[column], errors="coerce").fillna(0)
-    ranks = values.groupby(df["season"]).rank(pct=True, ascending=not higher_is_better)
+    ranks = values.groupby(df["season"]).rank(pct=True, ascending=higher_is_better)
     return (ranks * 100).round(0)
 
 
@@ -414,7 +418,11 @@ def transaction_scorecard(transactions: pd.DataFrame, roster_scores: pd.DataFram
         return base.assign(add_value=0.0, trade_value=0.0, unfortunate_drop_value=0.0, move_count=0, transaction_score=0.0), pd.DataFrame()
 
     txn = transactions.copy()
-    txn["week"] = pd.to_numeric(txn["week"], errors="coerce").fillna(1).astype(int)
+    txn["week"] = pd.to_numeric(txn["week"], errors="coerce")
+    txn = txn.dropna(subset=["week"]).copy()
+    if txn.empty:
+        return base.assign(add_value=0.0, trade_value=0.0, unfortunate_drop_value=0.0, move_count=0, transaction_score=0.0), pd.DataFrame()
+    txn["week"] = txn["week"].astype(int)
     txn["transaction_type"] = txn["transaction_type"].fillna("").astype(str)
     txn["is_add"] = txn["transaction_type"].str.contains("ADD|WAIVER|FREEAGENT", case=False, na=False)
     txn["is_trade"] = txn["transaction_type"].str.contains("TRADE", case=False, na=False)
@@ -644,15 +652,44 @@ def manager_profiles(transactions: pd.DataFrame, roster_scores: pd.DataFrame, te
     if roster_scores.empty:
         return txn.assign(bench_points_left=0.0, optimality_pct=1.0)
 
-    weekly = (
-        roster_scores.groupby(["season", "team_id", "week", "is_starter"])["points"]
+    rs = roster_scores.copy()
+    rs["points"] = pd.to_numeric(rs["points"], errors="coerce").fillna(0)
+
+    starter_totals = (
+        rs[rs["is_starter"] == 1]
+        .groupby(["season", "team_id", "week"])["points"]
         .sum()
-        .unstack(fill_value=0)
-        .rename(columns={0: "bench_points", 1: "starter_points"})
-        .reset_index()
+        .reset_index(name="starter_points")
     )
-    weekly["bench_points_left"] = weekly["bench_points"] * 0.18
-    weekly["optimality_pct"] = weekly["starter_points"] / (weekly["starter_points"] + weekly["bench_points_left"]).clip(lower=1)
+
+    # How many slots were actually used at each position that week (a "position" here is the
+    # player's real position, e.g. RB, even if it filled a Flex slot).
+    required_counts = (
+        rs[rs["is_starter"] == 1]
+        .groupby(["season", "team_id", "week", "position"], dropna=False)
+        .size()
+        .reset_index(name="required")
+    )
+
+    # Best-possible lineup: for each team/week/position, keep the top-scoring players (starters
+    # or bench) up to the number of slots actually used at that position that week, and sum them.
+    rs["position_rank"] = rs.groupby(["season", "team_id", "week", "position"], dropna=False)["points"].rank(
+        method="first", ascending=False
+    )
+    eligible = rs.merge(required_counts, on=["season", "team_id", "week", "position"], how="left")
+    eligible["required"] = eligible["required"].fillna(0)
+    optimal_totals = (
+        eligible[eligible["position_rank"] <= eligible["required"]]
+        .groupby(["season", "team_id", "week"])["points"]
+        .sum()
+        .reset_index(name="optimal_points")
+    )
+
+    weekly = starter_totals.merge(optimal_totals, on=["season", "team_id", "week"], how="left")
+    weekly["optimal_points"] = weekly["optimal_points"].fillna(weekly["starter_points"])
+    weekly["bench_points_left"] = (weekly["optimal_points"] - weekly["starter_points"]).clip(lower=0)
+    weekly["optimality_pct"] = weekly["starter_points"] / weekly["optimal_points"].clip(lower=1)
+
     opt = (
         weekly.groupby(["season", "team_id"])
         .agg(bench_points_left=("bench_points_left", "sum"), optimality_pct=("optimality_pct", "mean"))
@@ -670,9 +707,9 @@ def all_time_records(matchups: pd.DataFrame, teams: pd.DataFrame) -> dict[str, s
     games = _with_team(matchups, teams)
     high = games.loc[games["points_for"].idxmax()]
     losses = games[games["win"] == 0].copy()
-    worst = losses.sort_values("points_for").iloc[0] if not losses.empty else high
+    worst = losses.sort_values("points_for").iloc[0] if not losses.empty else None
     losses["margin"] = (losses["points_against"] - losses["points_for"]).abs()
-    close = losses.sort_values("margin").iloc[0] if not losses.empty else high
+    close = losses.sort_values("margin").iloc[0] if not losses.empty else None
 
     longest = ("n/a", 0)
     for (_, _team_id), group in games.sort_values(["season", "week"]).groupby(["season", "team_id"]):
@@ -686,9 +723,20 @@ def all_time_records(matchups: pd.DataFrame, teams: pd.DataFrame) -> dict[str, s
         if best > longest[1]:
             longest = (f"{manager}, {season}: {best}", best)
 
+    worst_loss = (
+        f"{worst['manager_name']} ({int(worst['season'])} W{int(worst['week'])}): {worst['points_for']:.1f}"
+        if worst is not None
+        else "n/a"
+    )
+    closest_loss = (
+        f"{close['manager_name']} ({int(close['season'])} W{int(close['week'])}): "
+        f"{close['points_for']:.1f}-{close['points_against']:.1f}"
+        if close is not None
+        else "n/a"
+    )
     return {
         "highest_score": f"{high['manager_name']} ({int(high['season'])} W{int(high['week'])}): {high['points_for']:.1f}",
-        "worst_loss": f"{worst['manager_name']} ({int(worst['season'])} W{int(worst['week'])}): {worst['points_for']:.1f}",
-        "closest_loss": f"{close['manager_name']} ({int(close['season'])} W{int(close['week'])}): {close['points_for']:.1f}-{close['points_against']:.1f}",
+        "worst_loss": worst_loss,
+        "closest_loss": closest_loss,
         "longest_win_streak": longest[0],
     }

@@ -119,10 +119,11 @@ def apply_owner_aliases(tables: dict[str, pd.DataFrame]) -> dict[str, pd.DataFra
 
 
 def manager_filter(df: pd.DataFrame, managers: list[str]) -> pd.DataFrame:
-    if not managers or "manager_name" not in df.columns:
+    if "manager_name" not in df.columns:
         return df
     if df["manager_name"].dropna().empty:
         return df
+    # An explicitly empty selection should show nothing, not fall back to "no filter".
     return df[df["manager_name"].isin(managers)]
 
 
@@ -189,12 +190,16 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
 
         selected_profile = None
         if not profiles.empty:
-            labels = ["New / unsaved"] + [
-                f"{row.league_name} ({int(row.league_id)})" for row in profiles.itertuples()
-            ]
-            profile_label = st.selectbox("Saved league", labels)
-            if profile_label != "New / unsaved":
-                selected_profile = profiles.iloc[labels.index(profile_label) - 1]
+            def _profile_label(profile_id: int | None) -> str:
+                if profile_id is None:
+                    return "New / unsaved"
+                row = profiles.loc[profiles["profile_id"] == profile_id].iloc[0]
+                return f"{row.league_name} ({int(row.league_id)})"
+
+            profile_options: list[int | None] = [None] + profiles["profile_id"].tolist()
+            selected_profile_id = st.selectbox("Saved league", profile_options, format_func=_profile_label)
+            if selected_profile_id is not None:
+                selected_profile = profiles.loc[profiles["profile_id"] == selected_profile_id].iloc[0]
 
         default_league_id = str(int(selected_profile["league_id"])) if selected_profile is not None else os.getenv("ESPN_LEAGUE_ID", "")
         default_seasons = str(selected_profile["seasons"]) if selected_profile is not None else os.getenv("ESPN_SEASONS", "2021,2022,2023,2024,2025")
@@ -224,9 +229,26 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
                 st.error("League ID must be a number before saving.")
 
         if col_a.button("Load sample", width="stretch"):
-            seed_sample_database(db, replace=True)
-            st.cache_data.clear()
-            st.success("Sample league loaded.")
+            if db.is_empty():
+                seed_sample_database(db, replace=True)
+                st.cache_data.clear()
+                st.success("Sample league loaded.")
+            else:
+                st.session_state["confirm_load_sample"] = True
+
+        if st.session_state.get("confirm_load_sample"):
+            st.warning(
+                "This will permanently replace your current league data "
+                "(synced ESPN history, uploaded CSVs, etc.) with generated sample data."
+            )
+            confirm_col, cancel_col = st.columns(2)
+            if confirm_col.button("Yes, overwrite with sample data", width="stretch"):
+                seed_sample_database(db, replace=True)
+                st.cache_data.clear()
+                st.session_state["confirm_load_sample"] = False
+                st.success("Sample league loaded.")
+            if cancel_col.button("Cancel", width="stretch"):
+                st.session_state["confirm_load_sample"] = False
 
         if col_b.button("Sync ESPN", width="stretch"):
             try:
@@ -249,6 +271,16 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
                         result = sync_espn_history(config, db)
                     st.cache_data.clear()
                     st.success(f"Synced {result['seasons_synced']} season(s).")
+                    incomplete_weeks = result.get("incomplete_weeks") or {}
+                    if incomplete_weeks:
+                        details = "; ".join(
+                            f"{season}: week(s) {', '.join(str(week) for week in weeks)}"
+                            for season, weeks in sorted(incomplete_weeks.items())
+                        )
+                        st.warning(
+                            "Some weekly boxscores failed to load and were skipped, so scoring/injury "
+                            f"data for those weeks may be incomplete ({details}). Try syncing again."
+                        )
                 except ValueError:
                     st.error("League ID must be a number.")
                 except EspnSyncError as exc:
@@ -372,11 +404,16 @@ def scatter_figure(
 ) -> go.Figure:
     fig = go.Figure()
     colors = _color_map(df[color])
-    max_size = float(df[size].max()) if size and not df[size].empty else 1
+    if size:
+        sizes = pd.to_numeric(df[size], errors="coerce")
+        max_size = float(sizes.max()) if not sizes.dropna().empty else 1.0
+    else:
+        max_size = 1.0
     for value, group in df.groupby(color, dropna=False):
         marker: dict[str, object] = {"color": colors.get(value, "#64748b"), "opacity": 0.82}
         if size:
-            marker["size"] = (group[size] / max(max_size, 1) * 24 + 8).tolist()
+            size_values = pd.to_numeric(group[size], errors="coerce").fillna(0)
+            marker["size"] = (size_values / max(max_size, 1) * 24 + 8).tolist()
         fig.add_trace(
             go.Scatter(
                 x=group[x],
@@ -447,13 +484,12 @@ def main() -> None:
     selected_seasons, selected_managers = sidebar(db)
     tables = apply_owner_aliases(load_tables(str(DB_PATH), db_cache_key()))
 
-    teams = tables["teams"]
-    if selected_seasons:
-        for name, df in list(tables.items()):
-            if "season" in df.columns:
-                tables[name] = df[df["season"].isin(selected_seasons)].copy()
+    for name, df in list(tables.items()):
+        if "season" in df.columns:
+            tables[name] = df[df["season"].isin(selected_seasons)].copy()
     for name, df in list(tables.items()):
         tables[name] = manager_filter(df, selected_managers)
+    teams = tables["teams"]
 
     st.title("League History Dashboard")
     st.caption("A dashboard for your league's story: draft habits, luck, slot pain, and all-time receipts.")
