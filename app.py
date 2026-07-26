@@ -251,7 +251,7 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
         # Filters live up top since they're what you'll actually touch most often -
         # league setup is fussed with once and then mostly left alone.
         with st.container(border=True):
-            st.subheader("Filters")
+            st.subheader("🔎 Filters")
             seasons = sorted(tables["teams"]["season"].dropna().unique().tolist()) if not tables["teams"].empty else []
             selected_seasons = st.multiselect("Visible seasons", seasons, default=seasons)
 
@@ -259,7 +259,7 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
             selected_managers = st.multiselect("Managers", managers, default=managers)
 
         with st.container(border=True):
-            st.subheader("League Setup")
+            st.subheader("⚙️ League Setup")
             st.caption("Sync a real ESPN league, load the sample league, or import your own CSVs.")
 
             selected_profile = None
@@ -282,18 +282,21 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
             league_name = st.text_input("League name", default_name)
             league_id = st.text_input("ESPN league ID", default_league_id)
             seasons_text = st.text_input("Seasons", default_seasons)
-            swid = st.text_input("SWID", os.getenv("ESPN_SWID", ""), type="password")
-            espn_s2 = st.text_input("espn_s2", os.getenv("ESPN_S2", ""), type="password")
-            cookie_header = st.text_input(
-                "Cookie header or JSON",
-                os.getenv("ESPN_COOKIE", ""),
-                type="password",
-                help="Optional. Accepts a browser Cookie header or JSON with swid/espn_s2 keys.",
-            )
-            if swid or espn_s2 or cookie_header:
-                st.caption(cookie_auth_summary(cookie_header or None, swid or None, espn_s2 or None))
 
-            if st.button("Save league", width="stretch"):
+            with st.expander("Advanced: ESPN authentication"):
+                st.caption("Only needed for private leagues - public leagues can sync with just a league ID.")
+                swid = st.text_input("SWID", os.getenv("ESPN_SWID", ""), type="password")
+                espn_s2 = st.text_input("espn_s2", os.getenv("ESPN_S2", ""), type="password")
+                cookie_header = st.text_input(
+                    "Cookie header or JSON",
+                    os.getenv("ESPN_COOKIE", ""),
+                    type="password",
+                    help="Optional. Accepts a browser Cookie header or JSON with swid/espn_s2 keys.",
+                )
+                if swid or espn_s2 or cookie_header:
+                    st.caption(cookie_auth_summary(cookie_header or None, swid or None, espn_s2 or None))
+
+            if st.button("💾 Save league", width="stretch"):
                 try:
                     db.save_league_profile(int(league_id), league_name.strip() or "My League", seasons_text)
                     st.cache_data.clear()
@@ -301,7 +304,7 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
                 except ValueError:
                     st.error("League ID must be a number before saving.")
 
-            if st.button("Load sample", width="stretch"):
+            if st.button("🎲 Load sample", width="stretch"):
                 if db.is_empty():
                     seed_sample_database(db, replace=True)
                     st.cache_data.clear()
@@ -315,15 +318,15 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
                     "(synced ESPN history, uploaded CSVs, etc.) with generated sample data."
                 )
                 confirm_col, cancel_col = st.columns(2)
-                if confirm_col.button("Yes, overwrite with sample data", width="stretch"):
+                if confirm_col.button("✅ Yes, overwrite", width="stretch"):
                     seed_sample_database(db, replace=True)
                     st.cache_data.clear()
                     st.session_state["confirm_load_sample"] = False
                     st.success("Sample league loaded.")
-                if cancel_col.button("Cancel", width="stretch"):
+                if cancel_col.button("✖️ Cancel", width="stretch"):
                     st.session_state["confirm_load_sample"] = False
 
-            if st.button("Sync ESPN", width="stretch"):
+            if st.button("🔄 Sync ESPN", width="stretch"):
                 try:
                     seasons = [int(part.strip()) for part in seasons_text.split(",") if part.strip()]
                 except ValueError:
@@ -366,7 +369,7 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
                     type=["csv"],
                     help="Headers can be season, player_id/player_name, team_id/manager_name, and auction_value/price.",
                 )
-                if st.button("Save auction prices", width="stretch", disabled=auction_file is None):
+                if st.button("💰 Save auction prices", width="stretch", disabled=auction_file is None):
                     try:
                         frame, error = normalize_import(pd.read_csv(auction_file), "auction")
                         if error:
@@ -383,7 +386,7 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
                     type=["csv"],
                     help="Headers can be season, week, player_id/player_name, and injury_status/status.",
                 )
-                if st.button("Save injury history", width="stretch", disabled=injury_file is None):
+                if st.button("🩹 Save injury history", width="stretch", disabled=injury_file is None):
                     try:
                         frame, error = normalize_import(pd.read_csv(injury_file), "injury")
                         if error:
@@ -395,7 +398,7 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
                     except Exception as exc:
                         st.error(f"Could not load injury CSV: {exc}")
 
-                if st.button("Pull nflverse injuries", width="stretch"):
+                if st.button("📡 Pull nflverse injuries", width="stretch"):
                     try:
                         seasons = [int(part.strip()) for part in seasons_text.split(",") if part.strip()]
                         with st.spinner("Loading public NFL injury reports..."):
@@ -425,7 +428,7 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
                         str(owner.manager_name),
                         key=f"owner_alias_{owner.manager_id}",
                     )
-                if st.button("Save owner names", width="stretch"):
+                if st.button("✏️ Save owner names", width="stretch"):
                     db.save_owner_aliases(aliases)
                     st.cache_data.clear()
                     st.success("Owner names saved.")
@@ -437,6 +440,102 @@ def metric_row(records: list[tuple[str, str, str]]) -> None:
     cols = st.columns(len(records))
     for col, (label, value, help_text) in zip(cols, records):
         col.metric(label, value, help=help_text)
+
+
+COLUMN_LABELS = {
+    "season": "Season",
+    "week": "Week",
+    "manager_name": "Manager",
+    "opponent_manager_name": "Opponent",
+    "team_name": "Team",
+    "opponent_team_name": "Opponent Team",
+    "points_for": "Points",
+    "points_against": "Opponent Points",
+    "margin": "Margin",
+    "win": "Won",
+    "player_id": "Player ID",
+    "player_name": "Player",
+    "auction_value": "Price",
+    "source": "Source",
+    "transaction_type": "Type",
+    "future_points": "Points After",
+    "acquisition_source": "Source",
+    "points": "Points",
+    "point_share": "Share",
+    "manager_points": "Manager Points",
+    "league_median": "League Median",
+    "delta_to_median": "+/- Median",
+    "slot_role": "Slot",
+    "position": "Position",
+    "slot_points": "Total Points",
+    "weeks": "Weeks",
+    "slot_points_per_week": "Pts/Week",
+    "draft_value_score": "Hindsight Score",
+    "draft_score": "Draft Score",
+    "risk_avoidance_score": "Risk Avoidance",
+    "lineup_construction_score": "Lineup Construction",
+    "sleeper_score": "Sleeper Score",
+    "injury_value_lost": "Injury $ Lost",
+    "sleeper_value": "Sleeper Value",
+    "transaction_score": "Transaction Score",
+    "net_transaction_value": "Net Value",
+    "add_value": "Add Value",
+    "trade_value": "Trade Value",
+    "unfortunate_drop_value": "Drop Regret",
+    "move_count": "Moves",
+    "actual_points": "Actual Points",
+    "projected_points": "Projected Points",
+    "average_delta": "Avg Points Over Projection",
+    "beat_projection_pct": "Beat Projection %",
+    "waiver_adds": "Waiver Adds",
+    "trades": "Trades",
+    "bench_points_left": "Bench Points Left",
+    "optimality_pct": "Lineup Efficiency",
+    "luck_wins": "Luck Wins",
+    "actual_wins": "Actual Wins",
+    "actual_losses": "Actual Losses",
+    "all_play_win_pct": "All-Play Win %",
+    "actual_win_pct": "Actual Win %",
+    "seasons": "Seasons",
+    "injured_player_weeks": "Injured Player-Weeks",
+    "injury_luck_index": "Injury Luck Index",
+    "schedule_luck_index": "Schedule Luck Index",
+    "overall_luck_index": "Overall Luck Index",
+    "early_picks": "Early Picks",
+    "early_pick_share": "Early Pick Share",
+    "team_id": "Team ID",
+    "manager_id": "Manager ID",
+}
+
+
+def humanize_columns(df: pd.DataFrame, overrides: dict[str, str] | None = None) -> pd.DataFrame:
+    """Consistent, readable table headers instead of raw snake_case column names."""
+    labels = {**COLUMN_LABELS, **(overrides or {})}
+
+    def _label(col: str) -> str:
+        if col in labels:
+            return labels[col]
+        words = str(col).replace("_", " ").split()
+        return " ".join(word.upper() if word.lower() == "id" else word.capitalize() for word in words)
+
+    return df.rename(columns={col: _label(col) for col in df.columns})
+
+
+def format_percent(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+    """Render fraction columns (0.62) as "62.0%" strings for display tables."""
+    out = df.copy()
+    for col in columns:
+        if col in out.columns:
+            out[col] = (pd.to_numeric(out[col], errors="coerce") * 100).round(1).map(
+                lambda value: "n/a" if pd.isna(value) else f"{value:.1f}%"
+            )
+    return out
+
+
+def show_table(df: pd.DataFrame, label: str = "Show data table", overrides: dict[str, str] | None = None) -> None:
+    """A collapsed expander for supporting detail, so the chart above stays the main event."""
+    with st.expander(f"📋 {label} ({len(df)} rows)"):
+        st.dataframe(humanize_columns(df, overrides), width="stretch", hide_index=True)
 
 
 def _color_map(values: pd.Series) -> dict[object, str]:
@@ -588,6 +687,7 @@ def main() -> None:
 
     selected_seasons, selected_managers = sidebar(db)
     tables = apply_owner_aliases(load_tables(str(DB_PATH), db_cache_key()))
+    has_any_league_data = not tables["teams"].empty
 
     for name, df in list(tables.items()):
         if "season" in df.columns:
@@ -599,8 +699,40 @@ def main() -> None:
     st.title("🥨 The Vault")
     st.caption("A League About Nothing — draft habits, schedule luck, slot pain, and all-time receipts, for the record.")
 
+    if not teams.empty:
+        season_count = teams["season"].nunique()
+        manager_count = teams["manager_name"].nunique()
+        game_count = (
+            tables["matchups"].drop_duplicates(subset=["season", "week", "matchup_id"]).shape[0]
+            if not tables["matchups"].empty and "matchup_id" in tables["matchups"].columns
+            else 0
+        )
+        st.markdown(
+            f"<span style='color:{BRAND['festivus_silver']}'>📊 "
+            f"{season_count} season{'s' if season_count != 1 else ''} &nbsp;·&nbsp; "
+            f"{manager_count} manager{'s' if manager_count != 1 else ''} &nbsp;·&nbsp; "
+            f"{game_count} game{'s' if game_count != 1 else ''} logged</span>",
+            unsafe_allow_html=True,
+        )
+
     if teams.empty:
-        st.info("No league data yet — yada yada yada. Load the sample league or sync a real one from the sidebar.")
+        if has_any_league_data:
+            st.info(
+                "No data matches your current **Visible seasons** / **Managers** filters — "
+                "select more of either in the sidebar."
+            )
+        else:
+            with st.container(border=True):
+                st.markdown("## 🥨 Nothing's here yet.")
+                st.write(
+                    "The Vault is empty — yada yada yada, no league data. Load the generated sample "
+                    "league below to explore the dashboard, or open **League Setup** in the sidebar to "
+                    "sync your real ESPN league."
+                )
+                if st.button("🎲 Load the sample league", type="primary"):
+                    seed_sample_database(db, replace=True)
+                    st.cache_data.clear()
+                    st.rerun()
         return
 
     records = all_time_records(tables["matchups"], tables["teams"])
@@ -644,73 +776,79 @@ def main() -> None:
         if luck.empty:
             st.info("No matchup data available yet.")
         else:
-            c_luck_a, c_luck_b, c_luck_c = st.columns([1, 1, 1])
-            granularity = c_luck_a.multiselect(
-                "Group luck by",
-                ["season", "manager_name", "team_name"],
-                default=["season", "manager_name"],
-            )
-            view_mode = c_luck_b.selectbox(
-                "Luck view",
-                ["Trend", "Ranked bars", "Actual vs all-play"],
-                index=0,
-            )
-            score_metric = c_luck_c.selectbox(
-                "Luck metric",
-                ["luck_wins", "overall_luck_index", "injury_value_lost"],
-                format_func=lambda value: {
-                    "luck_wins": "Schedule luck wins",
-                    "overall_luck_index": "Overall luck index",
-                    "injury_value_lost": "$ lost to injury",
-                }[value],
-            )
-            chart_luck = enriched_luck if not enriched_luck.empty else luck
-            aggregated_luck = aggregate_luck(chart_luck, granularity)
-            if view_mode == "Actual vs all-play":
-                fig = scatter_figure(
-                    chart_luck,
-                    "actual_win_pct",
-                    "all_play_win_pct",
-                    "manager_name",
-                    chart_title(
-                        "Bizarro World vs. Real World",
-                        "Actual win % vs. all-play win % — the record you'd have if you played everyone, every week.",
+            with st.container(border=True):
+                c_luck_a, c_luck_b, c_luck_c = st.columns([1, 1, 1])
+                granularity = c_luck_a.multiselect(
+                    "Group luck by",
+                    ["season", "manager_name", "team_name"],
+                    default=["season", "manager_name"],
+                    help="How to bucket the chart below - by season, by manager, or both.",
+                )
+                view_mode = c_luck_b.selectbox(
+                    "Luck view",
+                    ["Trend", "Ranked bars", "Actual vs all-play"],
+                    index=0,
+                    help=(
+                        "Trend: the metric over time. Ranked bars: a leaderboard for one metric. "
+                        "Actual vs all-play: your real record vs. what you'd get facing the whole league every week."
                     ),
-                    "Actual win %",
-                    "All-play win %",
-                    size="injury_value_lost" if "injury_value_lost" in chart_luck.columns else "points_for",
                 )
-                fig.add_shape(type="line", x0=0, y0=0, x1=1, y1=1, line={"dash": "dash", "color": "#AAB3C5"})
-            elif view_mode == "Trend" and "season" in aggregated_luck.columns and len(granularity) > 1:
-                color_dim = "manager_name" if "manager_name" in aggregated_luck.columns else granularity[-1]
-                fig = line_figure(
-                    aggregated_luck,
-                    "season",
-                    score_metric,
-                    color_dim,
-                    chart_title("Yada Yada, Over Time", f"{score_metric.replace('_', ' ').title()} across seasons."),
-                    "Season",
-                    score_metric.replace("_", " ").title(),
+                score_metric = c_luck_c.selectbox(
+                    "Luck metric",
+                    ["luck_wins", "overall_luck_index", "injury_value_lost"],
+                    format_func=lambda value: {
+                        "luck_wins": "Schedule luck wins",
+                        "overall_luck_index": "Overall luck index",
+                        "injury_value_lost": "Dollars lost to injury",
+                    }[value],
+                    help=(
+                        "Schedule luck wins: wins above/below what your scoring deserved. "
+                        "Overall luck index: schedule luck plus injury luck combined. "
+                        "Dollars lost to injury: draft/auction value of players out hurt."
+                    ),
                 )
-            else:
-                x_dim = "manager_name" if "manager_name" in aggregated_luck.columns else (granularity[0] if granularity else "season")
-                color_dim = "season" if "season" in aggregated_luck.columns and x_dim != "season" else x_dim
-                fig = grouped_bar_figure(
-                    aggregated_luck.sort_values(score_metric, ascending=score_metric == "injury_value_lost"),
-                    x_dim,
-                    score_metric,
-                    color_dim,
-                    chart_title("The Bizarro Leaderboard", f"{score_metric.replace('_', ' ').title()}, ranked."),
-                    x_dim.replace("_", " ").title(),
-                    score_metric.replace("_", " ").title(),
-                )
-            st.plotly_chart(fig)
-
-            st.dataframe(
-                aggregated_luck,
-                width="stretch",
-                hide_index=True,
-            )
+                chart_luck = enriched_luck if not enriched_luck.empty else luck
+                aggregated_luck = aggregate_luck(chart_luck, granularity)
+                if view_mode == "Actual vs all-play":
+                    fig = scatter_figure(
+                        chart_luck,
+                        "actual_win_pct",
+                        "all_play_win_pct",
+                        "manager_name",
+                        chart_title(
+                            "Bizarro World vs. Real World",
+                            "Actual win % vs. all-play win % — the record you'd have if you played everyone, every week.",
+                        ),
+                        "Actual win %",
+                        "All-play win %",
+                        size="injury_value_lost" if "injury_value_lost" in chart_luck.columns else "points_for",
+                    )
+                    fig.add_shape(type="line", x0=0, y0=0, x1=1, y1=1, line={"dash": "dash", "color": "#AAB3C5"})
+                elif view_mode == "Trend" and "season" in aggregated_luck.columns and len(granularity) > 1:
+                    color_dim = "manager_name" if "manager_name" in aggregated_luck.columns else granularity[-1]
+                    fig = line_figure(
+                        aggregated_luck,
+                        "season",
+                        score_metric,
+                        color_dim,
+                        chart_title("Yada Yada, Over Time", f"{score_metric.replace('_', ' ').title()} across seasons."),
+                        "Season",
+                        score_metric.replace("_", " ").title(),
+                    )
+                else:
+                    x_dim = "manager_name" if "manager_name" in aggregated_luck.columns else (granularity[0] if granularity else "season")
+                    color_dim = "season" if "season" in aggregated_luck.columns and x_dim != "season" else x_dim
+                    fig = grouped_bar_figure(
+                        aggregated_luck.sort_values(score_metric, ascending=score_metric == "injury_value_lost"),
+                        x_dim,
+                        score_metric,
+                        color_dim,
+                        chart_title("The Bizarro Leaderboard", f"{score_metric.replace('_', ' ').title()}, ranked."),
+                        x_dim.replace("_", " ").title(),
+                        score_metric.replace("_", " ").title(),
+                    )
+                st.plotly_chart(fig)
+                show_table(format_percent(aggregated_luck, ["all_play_win_pct", "actual_win_pct"]), "Show luck numbers")
 
     with tab_h2h:
         st.caption("Head-to-head history between any two managers: record, margins, and every meeting week by week.")
@@ -718,36 +856,43 @@ def main() -> None:
         if len(managers) < 2:
             st.info("Head-to-head history needs at least two managers.")
         else:
-            c_h2h_a, c_h2h_b = st.columns(2)
-            manager_a = c_h2h_a.selectbox("Manager A", managers, index=0)
-            manager_b_options = [manager for manager in managers if manager != manager_a]
-            manager_b = c_h2h_b.selectbox("Manager B", manager_b_options, index=0)
-            h2h_games, h2h_summary = head_to_head_history(tables["matchups"], tables["teams"], manager_a, manager_b)
-            if h2h_games.empty:
-                st.info("No matchups found for that pairing in the selected seasons.")
-            else:
-                cols = st.columns(2)
-                for col, row in zip(cols, h2h_summary.itertuples(index=False)):
-                    col.metric(
-                        str(row.manager_name),
-                        f"{int(row.wins)}-{int(row.losses)}",
-                        f"{row.avg_margin:+.2f} avg margin",
+            with st.container(border=True):
+                c_h2h_a, c_h2h_b = st.columns(2)
+                manager_a = c_h2h_a.selectbox("Manager A", managers, index=0)
+                manager_b_options = [manager for manager in managers if manager != manager_a]
+                manager_b = c_h2h_b.selectbox("Manager B", manager_b_options, index=0)
+                h2h_games, h2h_summary = head_to_head_history(tables["matchups"], tables["teams"], manager_a, manager_b)
+                if h2h_games.empty:
+                    st.info("No matchups found for that pairing in the selected seasons.")
+                else:
+                    cols = st.columns(2)
+                    for col, row in zip(cols, h2h_summary.itertuples(index=False)):
+                        col.metric(
+                            str(row.manager_name),
+                            f"{int(row.wins)}-{int(row.losses)}",
+                            f"{row.avg_margin:+.2f} avg margin",
+                        )
+                    fig = line_figure(
+                        h2h_games,
+                        "game_label",
+                        "points_for",
+                        "manager_name",
+                        chart_title(f"Hello, {manager_b}.", f"{manager_a} vs. {manager_b} — points scored in every meeting."),
+                        "Matchup",
+                        "Points",
                     )
-                fig = line_figure(
-                    h2h_games,
-                    "game_label",
-                    "points_for",
-                    "manager_name",
-                    chart_title(f"Hello, {manager_b}.", f"{manager_a} vs. {manager_b} — points scored in every meeting."),
-                    "Matchup",
-                    "Points",
-                )
-                st.plotly_chart(fig)
-                st.dataframe(
-                    head_to_head_game_table(h2h_games, manager_a, manager_b),
-                    width="stretch",
-                    hide_index=True,
-                )
+                    st.plotly_chart(fig)
+                    h2h_overrides = {
+                        f"{manager_a}_team": f"{manager_a}'s Team",
+                        f"{manager_a}_points": f"{manager_a} Points",
+                        f"{manager_b}_team": f"{manager_b}'s Team",
+                        f"{manager_b}_points": f"{manager_b} Points",
+                    }
+                    show_table(
+                        head_to_head_game_table(h2h_games, manager_a, manager_b),
+                        "Show every meeting",
+                        overrides=h2h_overrides,
+                    )
 
     with tab_draft:
         st.caption("Draft tendencies, hindsight value, and a scorecard for how each draft actually turned out.")
@@ -764,7 +909,10 @@ def main() -> None:
 
         draft_seasons = sorted(tables["draft_picks"]["season"].dropna().unique().tolist()) if not tables["draft_picks"].empty else []
         season_choice = st.selectbox(
-            "Season", ["All seasons (avg)"] + [str(season) for season in draft_seasons], key="draft_season_filter"
+            "Season",
+            ["All seasons (avg)"] + [str(season) for season in draft_seasons],
+            key="draft_season_filter",
+            help="Pick one draft year, or average every manager's numbers across all of them.",
         )
 
         if season_choice == "All seasons (avg)":
@@ -793,80 +941,74 @@ def main() -> None:
 
         c1, c2 = st.columns([1, 1])
         with c1:
-            if tendencies_view.empty:
-                st.info("No draft data available.")
-            else:
-                fig = grouped_bar_figure(
-                    tendencies_view,
-                    "manager_name",
-                    "early_pick_share",
-                    "position",
-                    chart_title("Draft Day at Vandelay Industries", "Position mix of each manager's early-round picks."),
-                    "Manager",
-                    "Share of early picks",
-                    barmode="stack",
-                )
-                fig.update_yaxes(tickformat=".0%")
-                st.plotly_chart(fig)
+            with st.container(border=True):
+                if tendencies_view.empty:
+                    st.info("No draft data available.")
+                else:
+                    fig = grouped_bar_figure(
+                        tendencies_view,
+                        "manager_name",
+                        "early_pick_share",
+                        "position",
+                        chart_title("Draft Day at Vandelay Industries", "Position mix of each manager's early-round picks."),
+                        "Manager",
+                        "Share of early picks",
+                        barmode="stack",
+                    )
+                    fig.update_yaxes(tickformat=".0%")
+                    st.plotly_chart(fig)
         with c2:
-            if hindsight_view.empty:
-                st.info("Hindsight draft grades need draft picks plus player scoring lines.")
-            else:
-                fig = ranked_bar_figure(
-                    hindsight_view,
-                    "manager_name",
-                    "draft_value_score",
-                    chart_title("20/20 Hindsight", "Draft value once the season actually happened - higher is better."),
-                    "Manager",
-                    "Hindsight value score",
-                )
-                st.plotly_chart(fig)
-                st.dataframe(hindsight_view, width="stretch", hide_index=True)
+            with st.container(border=True):
+                if hindsight_view.empty:
+                    st.info("Hindsight draft grades need draft picks plus player scoring lines.")
+                else:
+                    fig = ranked_bar_figure(
+                        hindsight_view,
+                        "manager_name",
+                        "draft_value_score",
+                        chart_title("20/20 Hindsight", "Draft value once the season actually happened - higher is better."),
+                        "Manager",
+                        "Hindsight value score",
+                    )
+                    st.plotly_chart(fig)
+                    show_table(hindsight_view, "Show hindsight numbers")
 
         if not scorecard_view.empty:
-            fig = ranked_bar_figure(
-                scorecard_view,
-                "manager_name",
-                "draft_score",
-                chart_title("The Vandelay Scorecard", "Composite draft score: risk avoidance, lineup construction, sleeper value."),
-                "Manager",
-                "Draft score",
-            )
-            st.plotly_chart(fig)
-            display_columns = [
-                col
-                for col in [
-                    "season",
+            with st.container(border=True):
+                fig = ranked_bar_figure(
+                    scorecard_view,
                     "manager_name",
-                    "team_name",
                     "draft_score",
-                    "risk_avoidance_score",
-                    "lineup_construction_score",
-                    "sleeper_score",
-                    "injury_value_lost",
-                    "sleeper_value",
+                    chart_title("The Vandelay Scorecard", "Composite draft score: risk avoidance, lineup construction, sleeper value."),
+                    "Manager",
+                    "Draft score",
+                )
+                st.plotly_chart(fig)
+                display_columns = [
+                    col
+                    for col in [
+                        "season",
+                        "manager_name",
+                        "team_name",
+                        "draft_score",
+                        "risk_avoidance_score",
+                        "lineup_construction_score",
+                        "sleeper_score",
+                        "injury_value_lost",
+                        "sleeper_value",
+                    ]
+                    if col in scorecard_view.columns
                 ]
-                if col in scorecard_view.columns
-            ]
-            st.dataframe(scorecard_view[display_columns], width="stretch", hide_index=True)
+                show_table(scorecard_view[display_columns], "Show scorecard numbers")
 
         if not auction_values.empty:
-            with st.expander("Auction price detail"):
-                st.dataframe(
-                    auction_values[
-                        [
-                            "season",
-                            "manager_name",
-                            "team_name",
-                            "player_name",
-                            "player_id",
-                            "auction_value",
-                            "source",
-                        ]
-                    ],
-                    width="stretch",
-                    hide_index=True,
-                )
+            show_table(
+                auction_values[
+                    ["season", "manager_name", "team_name", "player_name", "auction_value", "source"]
+                ],
+                "Show auction prices",
+                overrides={"auction_value": "Price ($)"},
+            )
 
     with tab_transactions:
         st.caption("Waiver adds, trades, and drops — scored by the points they actually produced afterward.")
@@ -874,55 +1016,48 @@ def main() -> None:
         if scores.empty:
             st.info("No transaction data available.")
         else:
-            fig = grouped_bar_figure(
-                scores,
-                "manager_name",
-                "transaction_score",
-                "season",
-                chart_title("The Regift Report", "Composite transaction score from adds, trades, and drops."),
-                "Manager",
-                "Score",
-            )
-            st.plotly_chart(fig)
-            st.dataframe(
-                scores[
-                    [
-                        "season",
-                        "manager_name",
-                        "team_name",
-                        "transaction_score",
-                        "net_transaction_value",
-                        "add_value",
-                        "trade_value",
-                        "unfortunate_drop_value",
-                        "move_count",
-                    ]
-                ],
-                width="stretch",
-                hide_index=True,
-            )
+            with st.container(border=True):
+                fig = grouped_bar_figure(
+                    scores,
+                    "manager_name",
+                    "transaction_score",
+                    "season",
+                    chart_title("The Regift Report", "Composite transaction score from adds, trades, and drops."),
+                    "Manager",
+                    "Score",
+                )
+                st.plotly_chart(fig)
+                show_table(
+                    scores[
+                        [
+                            "season",
+                            "manager_name",
+                            "team_name",
+                            "transaction_score",
+                            "net_transaction_value",
+                            "add_value",
+                            "trade_value",
+                            "unfortunate_drop_value",
+                            "move_count",
+                        ]
+                    ],
+                    "Show transaction numbers",
+                )
             if details.empty:
                 st.info("Transaction rows exist, but no future player scoring lines were available to grade them.")
             else:
                 drops = details[details["score_type"] == "Unfortunate drop"].sort_values("future_points", ascending=False)
                 if not drops.empty:
-                    st.subheader("Kramer's Bad Idea")
-                    st.caption("Players you dropped who kept scoring — just not for you.")
-                    st.dataframe(
-                        drops[
-                            [
-                                "season",
-                                "week",
-                                "manager_name",
-                                "player_id",
-                                "player_name",
-                                "transaction_type",
-                                "future_points",
-                            ]
-                        ].head(25),
-                        width="stretch",
-                        hide_index=True,
-                    )
+                    with st.container(border=True):
+                        st.subheader("Kramer's Bad Idea")
+                        st.caption("Players you dropped who kept scoring — just not for you.")
+                        show_table(
+                            drops[
+                                ["season", "week", "manager_name", "player_name", "transaction_type", "future_points"]
+                            ].head(25),
+                            "Show unfortunate drops",
+                            overrides={"transaction_type": "Move Type", "future_points": "Points They Scored After"},
+                        )
 
     with tab_player:
         st.caption("One manager's season under the spotlight: where their points came from and how each slot performed.")
@@ -943,136 +1078,149 @@ def main() -> None:
             else:
                 c_source, c_hist = st.columns([1, 2])
                 with c_source:
-                    if source_share.empty:
-                        st.info("No acquisition source split available.")
-                    else:
-                        fig = go.Figure(
-                            go.Pie(
-                                labels=source_share["acquisition_source"],
-                                values=source_share["points"],
-                                hole=0.48,
-                                marker={"colors": COLORWAY},
+                    with st.container(border=True):
+                        if source_share.empty:
+                            st.info("No acquisition source split available.")
+                        else:
+                            fig = go.Figure(
+                                go.Pie(
+                                    labels=source_share["acquisition_source"],
+                                    values=source_share["points"],
+                                    hole=0.48,
+                                    marker={"colors": COLORWAY},
+                                )
                             )
-                        )
-                        fig.update_layout(
-                            title=chart_title(
-                                "Where'd You Get That?",
-                                "Starter points by how each player was acquired.",
+                            fig.update_layout(
+                                title=chart_title(
+                                    "Where'd You Get That?",
+                                    "Starter points by how each player was acquired.",
+                                )
                             )
-                        )
-                        st.plotly_chart(polish_figure(fig))
-                        st.dataframe(source_share, width="stretch", hide_index=True)
+                            st.plotly_chart(polish_figure(fig))
+                            show_table(
+                                format_percent(source_share, ["point_share"]),
+                                "Show source breakdown",
+                                overrides={"points": "Points"},
+                            )
                 with c_hist:
-                    fig = go.Figure()
-                    fig.add_trace(
-                        go.Histogram(
-                            x=weekly["manager_points"],
-                            name=selected_profile_manager,
-                            opacity=0.78,
-                            marker_color=COLORWAY[0],
-                        )
-                    )
-                    fig.add_trace(
-                        go.Histogram(
-                            x=weekly["league_median"],
-                            name="League median",
-                            opacity=0.62,
-                            marker_color=COLORWAY[3],
-                        )
-                    )
-                    fig.update_layout(
-                        title=chart_title(
-                            "You vs. The Field",
-                            "Weekly starter points for this manager vs. the league median that week.",
-                        ),
-                        xaxis_title="Points",
-                        yaxis_title="Weeks",
-                        barmode="overlay",
-                    )
-                    st.plotly_chart(polish_figure(fig))
-
-                if not source_share.empty:
-                    league_avg_share = acquisition_source_league_average(
-                        tables["roster_scores"], tables["teams"], tables["draft_picks"], tables["transactions"]
-                    )
-                    if not league_avg_share.empty:
-                        compare = source_share[["acquisition_source", "point_share"]].merge(
-                            league_avg_share.rename(columns={"point_share": "league_avg_share"}),
-                            on="acquisition_source",
-                            how="outer",
-                        ).fillna(0)
+                    with st.container(border=True):
                         fig = go.Figure()
                         fig.add_trace(
-                            go.Bar(
-                                x=compare["acquisition_source"],
-                                y=compare["point_share"],
+                            go.Histogram(
+                                x=weekly["manager_points"],
                                 name=selected_profile_manager,
+                                opacity=0.78,
                                 marker_color=COLORWAY[0],
                             )
                         )
                         fig.add_trace(
-                            go.Bar(
-                                x=compare["acquisition_source"],
-                                y=compare["league_avg_share"],
-                                name="League average",
+                            go.Histogram(
+                                x=weekly["league_median"],
+                                name="League median",
+                                opacity=0.62,
                                 marker_color=COLORWAY[3],
                             )
                         )
                         fig.update_layout(
                             title=chart_title(
-                                "You vs. Everyone Else",
-                                "This manager's acquisition-source point share vs. the league average.",
+                                "You vs. The Field",
+                                "Weekly starter points for this manager vs. the league median that week.",
                             ),
-                            xaxis_title="Acquisition source",
-                            yaxis_title="Share of starter points",
-                            barmode="group",
+                            xaxis_title="Points",
+                            yaxis_title="Weeks",
+                            barmode="overlay",
                         )
-                        fig.update_yaxes(tickformat=".0%")
                         st.plotly_chart(polish_figure(fig))
 
-                if not slot_weekly.empty:
-                    st.subheader("🎰 Slot Machine")
-                    slot_roles = sorted(slot_weekly["slot_role"].dropna().unique().tolist())
-                    slot_filter = st.multiselect("Roster slots", slot_roles, default=slot_roles)
-                    active_slots = [slot for slot in slot_roles if slot in slot_filter] if slot_filter else slot_roles
-                    st.markdown(
-                        f"<span style='color:{COLORWAY[0]}'>&#9632;</span> {selected_profile_manager} "
-                        f"&nbsp;&nbsp; <span style='color:{COLORWAY[3]}'>&#9632;</span> League median "
-                        "&nbsp;&nbsp; <span style='opacity:0.7'>one panel per roster slot, same idea as \"You vs. The Field\".</span>",
-                        unsafe_allow_html=True,
-                    )
-                    slot_view = slot_weekly[slot_weekly["slot_role"].isin(active_slots)]
-                    cols_per_row = 3
-                    for start in range(0, len(active_slots), cols_per_row):
-                        row_slots = active_slots[start : start + cols_per_row]
-                        row_cols = st.columns(len(row_slots))
-                        for col, slot_name in zip(row_cols, row_slots):
-                            group = slot_view[slot_view["slot_role"] == slot_name]
+                if not source_share.empty:
+                    with st.container(border=True):
+                        league_avg_share = acquisition_source_league_average(
+                            tables["roster_scores"], tables["teams"], tables["draft_picks"], tables["transactions"]
+                        )
+                        if not league_avg_share.empty:
+                            compare = source_share[["acquisition_source", "point_share"]].merge(
+                                league_avg_share.rename(columns={"point_share": "league_avg_share"}),
+                                on="acquisition_source",
+                                how="outer",
+                            ).fillna(0)
                             fig = go.Figure()
                             fig.add_trace(
-                                go.Histogram(
-                                    x=group["manager_points"],
-                                    opacity=0.78,
+                                go.Bar(
+                                    x=compare["acquisition_source"],
+                                    y=compare["point_share"],
+                                    name=selected_profile_manager,
                                     marker_color=COLORWAY[0],
                                 )
                             )
                             fig.add_trace(
-                                go.Histogram(
-                                    x=group["league_median"],
-                                    opacity=0.62,
+                                go.Bar(
+                                    x=compare["acquisition_source"],
+                                    y=compare["league_avg_share"],
+                                    name="League average",
                                     marker_color=COLORWAY[3],
                                 )
                             )
                             fig.update_layout(
-                                title=str(slot_name),
-                                xaxis_title="Points",
-                                yaxis_title="Weeks",
-                                barmode="overlay",
-                                showlegend=False,
-                                height=280,
+                                title=chart_title(
+                                    "You vs. Everyone Else",
+                                    "This manager's acquisition-source point share vs. the league average.",
+                                ),
+                                xaxis_title="Acquisition source",
+                                yaxis_title="Share of starter points",
+                                barmode="group",
                             )
-                            col.plotly_chart(polish_figure(fig), width="stretch")
-                    st.dataframe(slot_view, width="stretch", hide_index=True)
+                            fig.update_yaxes(tickformat=".0%")
+                            st.plotly_chart(polish_figure(fig))
+
+                if not slot_weekly.empty:
+                    with st.container(border=True):
+                        st.subheader("🎰 Slot Machine")
+                        slot_roles = sorted(slot_weekly["slot_role"].dropna().unique().tolist())
+                        slot_filter = st.multiselect(
+                            "Roster slots",
+                            slot_roles,
+                            default=slot_roles,
+                            help="Show or hide individual roster slots below.",
+                        )
+                        active_slots = [slot for slot in slot_roles if slot in slot_filter] if slot_filter else slot_roles
+                        st.markdown(
+                            f"<span style='color:{COLORWAY[0]}'>&#9632;</span> {selected_profile_manager} "
+                            f"&nbsp;&nbsp; <span style='color:{COLORWAY[3]}'>&#9632;</span> League median "
+                            "&nbsp;&nbsp; <span style='opacity:0.7'>one panel per roster slot, same idea as \"You vs. The Field\".</span>",
+                            unsafe_allow_html=True,
+                        )
+                        slot_view = slot_weekly[slot_weekly["slot_role"].isin(active_slots)]
+                        cols_per_row = 3
+                        for start in range(0, len(active_slots), cols_per_row):
+                            row_slots = active_slots[start : start + cols_per_row]
+                            row_cols = st.columns(len(row_slots))
+                            for col, slot_name in zip(row_cols, row_slots):
+                                group = slot_view[slot_view["slot_role"] == slot_name]
+                                fig = go.Figure()
+                                fig.add_trace(
+                                    go.Histogram(
+                                        x=group["manager_points"],
+                                        opacity=0.78,
+                                        marker_color=COLORWAY[0],
+                                    )
+                                )
+                                fig.add_trace(
+                                    go.Histogram(
+                                        x=group["league_median"],
+                                        opacity=0.62,
+                                        marker_color=COLORWAY[3],
+                                    )
+                                )
+                                fig.update_layout(
+                                    title=str(slot_name),
+                                    xaxis_title="Points",
+                                    yaxis_title="Weeks",
+                                    barmode="overlay",
+                                    showlegend=False,
+                                    height=280,
+                                )
+                                col.plotly_chart(polish_figure(fig), width="stretch")
+                        show_table(slot_view, "Show slot-by-week numbers")
 
     with tab_projection:
         st.caption("Actual points vs. what was projected — who beats their projections, and by how much.")
@@ -1083,103 +1231,107 @@ def main() -> None:
         else:
             best_delta = projection.sort_values("average_delta", ascending=False).iloc[0]
             best_beat = projection.sort_values("beat_projection_pct", ascending=False).iloc[0]
-            c0a, c0b = st.columns(2)
-            c0a.metric(
-                "Biggest projection beat",
-                f"{best_delta['manager_name']}, {int(best_delta['season'])}",
-                f"{best_delta['average_delta']:+.2f} pts/week",
-            )
-            c0b.metric(
-                "Best beat rate",
-                f"{best_beat['manager_name']}, {int(best_beat['season'])}",
-                f"{best_beat['beat_projection_pct']:.1%}",
-            )
+            with st.container(border=True):
+                c0a, c0b = st.columns(2)
+                c0a.metric(
+                    "Biggest projection beat",
+                    f"{best_delta['manager_name']}, {int(best_delta['season'])}",
+                    f"{best_delta['average_delta']:+.2f} pts/week",
+                )
+                c0b.metric(
+                    "Best beat rate",
+                    f"{best_beat['manager_name']}, {int(best_beat['season'])}",
+                    f"{best_beat['beat_projection_pct']:.1%}",
+                )
 
-            c1, c2 = st.columns([1, 1])
-            with c1:
-                fig = scatter_figure(
-                    projection,
-                    "projected_points",
-                    "actual_points",
-                    "manager_name",
-                    chart_title("Beating the Odds", "Actual points vs. projected — above the line means you overperformed."),
-                    "Projected points",
-                    "Actual points",
-                )
-                fig.add_shape(
-                    type="line",
-                    x0=projection["projected_points"].min(),
-                    y0=projection["projected_points"].min(),
-                    x1=projection["projected_points"].max(),
-                    y1=projection["projected_points"].max(),
-                    line={"dash": "dash", "color": "#777"},
-                )
-                st.plotly_chart(polish_figure(fig))
-                st.caption(
-                    "Each dot is one manager's full-season total for one year (color = manager, "
-                    "hover for the exact season) — not a single week."
-                )
-            with c2:
-                beat = (
-                    projection.groupby("manager_name", as_index=False)
-                    .agg(
-                        average_delta=("average_delta", "mean"),
-                        beat_projection_pct=("beat_projection_pct", "mean"),
+                c1, c2 = st.columns([1, 1])
+                with c1:
+                    fig = scatter_figure(
+                        projection,
+                        "projected_points",
+                        "actual_points",
+                        "manager_name",
+                        chart_title("Beating the Odds", "Actual points vs. projected — above the line means you overperformed."),
+                        "Projected points",
+                        "Actual points",
                     )
-                    .round({"average_delta": 2, "beat_projection_pct": 3})
-                )
-                fig = go.Figure(
-                    go.Bar(
-                        x=beat.sort_values("average_delta", ascending=False)["manager_name"],
-                        y=beat.sort_values("average_delta", ascending=False)["average_delta"],
-                        marker_color=beat.sort_values("average_delta", ascending=False)["beat_projection_pct"],
-                        marker_colorscale="RdYlGn",
+                    fig.add_shape(
+                        type="line",
+                        x0=projection["projected_points"].min(),
+                        y0=projection["projected_points"].min(),
+                        x1=projection["projected_points"].max(),
+                        y1=projection["projected_points"].max(),
+                        line={"dash": "dash", "color": "#777"},
                     )
-                )
-                fig.update_layout(
-                    title=chart_title(
-                        "The Overperformers",
-                        "Average points over projection per manager, colored by how often they beat it.",
-                    ),
-                    xaxis_title="Manager",
-                    yaxis_title="Avg points over projection",
-                )
-                st.plotly_chart(polish_figure(fig))
+                    st.plotly_chart(polish_figure(fig))
+                    st.caption(
+                        "Each dot is one manager's full-season total for one year (color = manager, "
+                        "hover for the exact season) — not a single week."
+                    )
+                with c2:
+                    beat = (
+                        projection.groupby("manager_name", as_index=False)
+                        .agg(
+                            average_delta=("average_delta", "mean"),
+                            beat_projection_pct=("beat_projection_pct", "mean"),
+                        )
+                        .round({"average_delta": 2, "beat_projection_pct": 3})
+                    )
+                    fig = go.Figure(
+                        go.Bar(
+                            x=beat.sort_values("average_delta", ascending=False)["manager_name"],
+                            y=beat.sort_values("average_delta", ascending=False)["average_delta"],
+                            marker_color=beat.sort_values("average_delta", ascending=False)["beat_projection_pct"],
+                            marker_colorscale="RdYlGn",
+                        )
+                    )
+                    fig.update_layout(
+                        title=chart_title(
+                            "The Overperformers",
+                            "Average points over projection per manager, colored by how often they beat it.",
+                        ),
+                        xaxis_title="Manager",
+                        yaxis_title="Avg points over projection",
+                    )
+                    st.plotly_chart(polish_figure(fig))
 
             if not matrix.empty:
-                wins = matrix[matrix["result"] == "Win"]
-                fig = go.Figure(
-                    go.Bar(
-                        x=wins["projected_bucket"].astype(str),
-                        y=wins["win_rate"],
-                        marker_color=COLORWAY[: len(wins)],
+                with st.container(border=True):
+                    wins = matrix[matrix["result"] == "Win"]
+                    fig = go.Figure(
+                        go.Bar(
+                            x=wins["projected_bucket"].astype(str),
+                            y=wins["win_rate"],
+                            marker_color=COLORWAY[: len(wins)],
+                        )
                     )
-                )
-                fig.update_layout(
-                    title=chart_title(
-                        "Big Dog, Little Dog",
-                        "Actual win rate by how big a favorite or underdog you were projected to be.",
-                    ),
-                    xaxis_title="Projected matchup bucket",
-                    yaxis_title="Actual win rate",
-                    showlegend=False,
-                )
-                st.plotly_chart(polish_figure(fig))
+                    fig.update_layout(
+                        title=chart_title(
+                            "Big Dog, Little Dog",
+                            "Actual win rate by how big a favorite or underdog you were projected to be.",
+                        ),
+                        xaxis_title="Projected matchup bucket",
+                        yaxis_title="Actual win rate",
+                        showlegend=False,
+                    )
+                    st.plotly_chart(polish_figure(fig))
 
-            st.dataframe(
-                projection[
-                    [
-                        "season",
-                        "manager_name",
-                        "team_name",
-                        "actual_points",
-                        "projected_points",
-                        "average_delta",
-                        "beat_projection_pct",
-                    ]
-                ],
-                width="stretch",
-                hide_index=True,
+            show_table(
+                format_percent(
+                    projection[
+                        [
+                            "season",
+                            "manager_name",
+                            "team_name",
+                            "actual_points",
+                            "projected_points",
+                            "average_delta",
+                            "beat_projection_pct",
+                        ]
+                    ],
+                    ["beat_projection_pct"],
+                ),
+                "Show projection numbers",
             )
 
     with tab_positions:
@@ -1188,43 +1340,44 @@ def main() -> None:
         if positional.empty:
             st.info("No roster slot data available.")
         else:
-            heatmap = positional.pivot_table(
-                index="manager_name",
-                columns="position",
-                values="slot_points_per_week",
-                aggfunc="mean",
-            ).fillna(0)
-            # Color each position column on its own scale - a shared scale would make low-
-            # scoring positions like K/DST look uniformly "bad" next to RB/WR, when what
-            # actually matters is how a manager stacks up against the league at that same spot.
-            col_min = heatmap.min(axis=0)
-            col_max = heatmap.max(axis=0)
-            col_span = (col_max - col_min).replace(0, float("nan"))
-            normalized = ((heatmap - col_min) / col_span).fillna(0.5)
-            fig = go.Figure(
-                go.Heatmap(
-                    z=normalized.values,
-                    x=heatmap.columns.tolist(),
-                    y=heatmap.index.tolist(),
-                    zmin=0,
-                    zmax=1,
-                    colorscale="RdYlGn",
-                    text=heatmap.values,
-                    texttemplate="%{text:.1f}",
-                    hovertemplate="Manager: %{y}<br>Position: %{x}<br>Pts/week: %{text:.1f}<extra></extra>",
-                    colorbar={"title": "Rank within<br>position"},
+            with st.container(border=True):
+                heatmap = positional.pivot_table(
+                    index="manager_name",
+                    columns="position",
+                    values="slot_points_per_week",
+                    aggfunc="mean",
+                ).fillna(0)
+                # Color each position column on its own scale - a shared scale would make low-
+                # scoring positions like K/DST look uniformly "bad" next to RB/WR, when what
+                # actually matters is how a manager stacks up against the league at that same spot.
+                col_min = heatmap.min(axis=0)
+                col_max = heatmap.max(axis=0)
+                col_span = (col_max - col_min).replace(0, float("nan"))
+                normalized = ((heatmap - col_min) / col_span).fillna(0.5)
+                fig = go.Figure(
+                    go.Heatmap(
+                        z=normalized.values,
+                        x=heatmap.columns.tolist(),
+                        y=heatmap.index.tolist(),
+                        zmin=0,
+                        zmax=1,
+                        colorscale="RdYlGn",
+                        text=heatmap.values,
+                        texttemplate="%{text:.1f}",
+                        hovertemplate="Manager: %{y}<br>Position: %{x}<br>Pts/week: %{text:.1f}<extra></extra>",
+                        colorbar={"title": "Rank within<br>position"},
+                    )
                 )
-            )
-            fig.update_layout(
-                title=chart_title(
-                    "The Big Salad Breakdown",
-                    "Points/week by position - color shows rank within that position, not raw magnitude.",
-                ),
-                xaxis_title="Position",
-                yaxis_title="Manager",
-            )
-            st.plotly_chart(polish_figure(fig))
-            st.dataframe(positional, width="stretch", hide_index=True)
+                fig.update_layout(
+                    title=chart_title(
+                        "The Big Salad Breakdown",
+                        "Points/week by position - color shows rank within that position, not raw magnitude.",
+                    ),
+                    xaxis_title="Position",
+                    yaxis_title="Manager",
+                )
+                st.plotly_chart(polish_figure(fig))
+                show_table(positional, "Show position numbers")
 
     with tab_profiles:
         st.caption("Manager behavior: waiver-wire hustle vs. points wasted on the bench.")
@@ -1232,18 +1385,19 @@ def main() -> None:
         if profiles.empty:
             st.info("No transaction or bench data available.")
         else:
-            fig = scatter_figure(
-                profiles,
-                "waiver_adds",
-                "bench_points_left",
-                "manager_name",
-                chart_title("Hustle vs. Waste", "Waiver-wire activity vs. points left stranded on the bench."),
-                "Waiver adds",
-                "Bench points left",
-                size="trades",
-            )
-            st.plotly_chart(fig)
-            st.dataframe(profiles, width="stretch", hide_index=True)
+            with st.container(border=True):
+                fig = scatter_figure(
+                    profiles,
+                    "waiver_adds",
+                    "bench_points_left",
+                    "manager_name",
+                    chart_title("Hustle vs. Waste", "Waiver-wire activity vs. points left stranded on the bench."),
+                    "Waiver adds",
+                    "Bench points left",
+                    size="trades",
+                )
+                st.plotly_chart(fig)
+                show_table(format_percent(profiles, ["optimality_pct"]), "Show manager numbers")
 
     with tab_records:
         st.caption("Every all-time record in one place, for when someone needs the receipts.")
@@ -1308,19 +1462,24 @@ def main() -> None:
                 ),
             ]
 
+            medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+
             for start in range(0, len(sections), 2):
                 row_sections = sections[start : start + 2]
                 cols = st.columns(len(row_sections))
                 for col, (title, caption, df, renames) in zip(cols, row_sections):
                     with col:
-                        st.markdown(f"#### {title}")
-                        st.caption(caption)
-                        if df.empty:
-                            st.info("Not enough data yet.")
-                        else:
-                            display_df = df.rename(columns=renames)
-                            display_df.insert(0, "Rank", range(1, len(display_df) + 1))
-                            st.dataframe(display_df, width="stretch", hide_index=True)
+                        with st.container(border=True):
+                            st.markdown(f"#### {title}")
+                            st.caption(caption)
+                            if df.empty:
+                                st.info("Not enough data yet.")
+                            else:
+                                display_df = df.rename(columns=renames)
+                                display_df.insert(
+                                    0, "Rank", [f"{medals.get(i, '')} {i}".strip() for i in range(1, len(display_df) + 1)]
+                                )
+                                st.dataframe(display_df, width="stretch", hide_index=True)
 
 
 if __name__ == "__main__":
