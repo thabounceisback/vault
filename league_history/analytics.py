@@ -806,7 +806,8 @@ def all_time_records(matchups: pd.DataFrame, teams: pd.DataFrame) -> dict[str, s
     )
     closest_loss = (
         f"{close['manager_name']} ({int(close['season'])} W{int(close['week'])}): "
-        f"{close['points_for']:.1f}-{close['points_against']:.1f}"
+        f"lost by {close['points_against'] - close['points_for']:.1f} "
+        f"({close['points_for']:.1f}-{close['points_against']:.1f})"
         if close is not None
         else "n/a"
     )
