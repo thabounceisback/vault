@@ -42,7 +42,21 @@ The full `ESPN_COOKIE` header is optional, but it is the most reliable auth
 path. In browser DevTools, open the Network tab, reload your ESPN Fantasy league
 page, select an ESPN API request, and copy the `Cookie` request header.
 
+## Testing
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
 ## Data Model
+
+The dashboard stores everything in a single local SQLite file, shared by whoever
+runs this instance - there is no per-user or per-session isolation. If you run
+it somewhere multiple people can access at once, one person's "Load sample" or
+"Sync ESPN" click can overwrite another's in-progress data (including data
+derived from their private ESPN auth cookies). It's designed to be run locally
+by one person/league at a time.
 
 SQLite tables are kept in `data/league_history.sqlite`:
 

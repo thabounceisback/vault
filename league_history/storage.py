@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Iterator
 
 import pandas as pd
 
@@ -125,8 +126,19 @@ class Database:
         conn.row_factory = sqlite3.Row
         return conn
 
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        # sqlite3.Connection.__exit__ only commits/rolls back the transaction, it does not
+        # close the connection - close it explicitly so we don't leak a handle per call.
+        conn = self.connect()
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
     def initialize(self) -> None:
-        with self.connect() as conn:
+        with self._connection() as conn:
             for ddl in TABLES.values():
                 conn.execute(ddl)
             self._migrate(conn)
@@ -142,7 +154,7 @@ class Database:
 
     def replace_tables(self, frames: dict[str, pd.DataFrame]) -> None:
         self.initialize()
-        with self.connect() as conn:
+        with self._connection() as conn:
             for name in TABLES:
                 if name in {"league_profiles", "owner_aliases"}:
                     continue
@@ -155,7 +167,7 @@ class Database:
     def append_tables(self, frames: dict[str, pd.DataFrame], seasons: Iterable[int]) -> None:
         self.initialize()
         season_list = list(seasons)
-        with self.connect() as conn:
+        with self._connection() as conn:
             for name in TABLES:
                 if name in {"managers", "league_profiles", "owner_aliases"}:
                     continue
@@ -177,18 +189,33 @@ class Database:
 
     def read_all(self) -> dict[str, pd.DataFrame]:
         self.initialize()
-        with self.connect() as conn:
+        with self._connection() as conn:
             return {name: pd.read_sql_query(f"SELECT * FROM {name}", conn) for name in TABLES}
 
     def is_empty(self) -> bool:
+        # Check every user-populated table, not just teams - otherwise uploading an injury or
+        # auction CSV before ever syncing/loading a league would still count as "empty" and get
+        # silently wiped by an auto-reseed of sample data.
         self.initialize()
-        with self.connect() as conn:
-            row = conn.execute("SELECT COUNT(*) AS count FROM teams").fetchone()
-        return int(row["count"]) == 0
+        core_tables = [
+            "teams",
+            "draft_picks",
+            "matchups",
+            "roster_scores",
+            "transactions",
+            "auction_values",
+            "injuries",
+        ]
+        with self._connection() as conn:
+            counts = [
+                int(conn.execute(f"SELECT COUNT(*) AS count FROM {table}").fetchone()["count"])
+                for table in core_tables
+            ]
+        return all(count == 0 for count in counts)
 
     def save_league_profile(self, league_id: int, league_name: str, seasons: str) -> None:
         self.initialize()
-        with self.connect() as conn:
+        with self._connection() as conn:
             existing = conn.execute(
                 "SELECT profile_id FROM league_profiles WHERE league_id = ?",
                 (league_id,),
@@ -210,7 +237,7 @@ class Database:
 
     def save_owner_aliases(self, aliases: dict[str, str]) -> None:
         self.initialize()
-        with self.connect() as conn:
+        with self._connection() as conn:
             for manager_id, display_name in aliases.items():
                 cleaned = display_name.strip()
                 if not cleaned:
@@ -229,7 +256,7 @@ class Database:
         if table_name not in {"auction_values", "injuries"}:
             raise ValueError(f"Unsupported import table: {table_name}")
         self.initialize()
-        with self.connect() as conn:
+        with self._connection() as conn:
             conn.execute(f"DELETE FROM {table_name} WHERE source = 'upload'")
             if not frame.empty:
                 frame.to_sql(table_name, conn, if_exists="append", index=False)
@@ -238,7 +265,7 @@ class Database:
         if table_name not in {"auction_values", "injuries"}:
             raise ValueError(f"Unsupported source table: {table_name}")
         self.initialize()
-        with self.connect() as conn:
+        with self._connection() as conn:
             conn.execute(f"DELETE FROM {table_name} WHERE source = ?", (source,))
             if not frame.empty:
                 frame.to_sql(table_name, conn, if_exists="append", index=False)
