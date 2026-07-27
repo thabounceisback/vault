@@ -212,10 +212,21 @@ class EspnClient:
 
         weekly_games: list[dict[str, Any]] = []
         for week in weeks:
-            # mRoster is required here too - without it ESPN drops per-player metadata
-            # like injuryStatus from this week's snapshot, even though mBoxscore alone
-            # is enough for scoring.
-            params = [("view", "mBoxscore"), ("view", "mRoster"), ("scoringPeriodId", str(week))]
+            # All three views are required. mRoster alone still drops per-player metadata
+            # like injuryStatus from this week's snapshot. More importantly, mMatchupScore
+            # is what actually scopes rosterForMatchupPeriod to *this* scoring period -
+            # without it, ESPN tends to leave that field empty for past weeks, and
+            # _side_entries() silently falls back to rosterForCurrentScoringPeriod: today's
+            # roster and lineup-slot assignment, retroactively applied to every historical
+            # week. That single gap explains both under-reported injuries (only whoever is
+            # hurt *right now* ever shows up) and wrong/missing roster slots (a slot that's
+            # empty today, like Flex in the off-season, never appears in history at all).
+            params = [
+                ("view", "mMatchupScore"),
+                ("view", "mBoxscore"),
+                ("view", "mRoster"),
+                ("scoringPeriodId", str(week)),
+            ]
             if base_params and any(name == "seasonId" for name, _ in base_params):
                 params = [("seasonId", str(season)), *params]
             response = self._get_first_available(

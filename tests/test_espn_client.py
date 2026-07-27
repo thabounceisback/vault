@@ -1,7 +1,22 @@
 from __future__ import annotations
 
 from league_history.analytics import slot_role
-from league_history.espn_client import EspnClient, normalize_season
+from league_history.espn_client import EspnClient, EspnConfig, normalize_season
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict, status_code: int = 200) -> None:
+        self._payload = payload
+        self.status_code = status_code
+        self.is_redirect = False
+        self.headers: dict = {}
+        self.url = "https://example.invalid"
+
+    def json(self) -> dict:
+        return self._payload
+
+    def raise_for_status(self) -> None:
+        pass
 
 
 def _entry(player_id: int, name: str, position_id: int, lineup_slot: int, points: float = 10.0) -> dict:
@@ -152,3 +167,25 @@ def test_plain_add_still_uses_top_level_team_id_without_to_from_fields():
     frames = normalize_season(2024, payload)
     txns = frames["transactions"]
     assert txns.loc[0, "team_id"] == 1
+
+
+def test_weekly_boxscore_fetch_requests_matchup_score_view():
+    # Without mMatchupScore, ESPN tends to leave rosterForMatchupPeriod empty for past
+    # weeks, which sends _side_entries() down the rosterForCurrentScoringPeriod fallback -
+    # today's roster/lineup slots applied to every historical week. Lock in that the
+    # per-week fetch always asks for it.
+    client = EspnClient(EspnConfig(league_id=1, seasons=[2024]))
+    captured_params: list[list[tuple[str, str]]] = []
+
+    def fake_get(url, params=None, timeout=None, allow_redirects=None):
+        captured_params.append(list(params))
+        return _FakeResponse({"schedule": []})
+
+    client.session.get = fake_get
+    client._fetch_weekly_boxscores(2024, ["https://example.invalid"], [1])
+
+    assert len(captured_params) == 1
+    views = [value for name, value in captured_params[0] if name == "view"]
+    assert "mMatchupScore" in views
+    assert "mBoxscore" in views
+    assert "mRoster" in views
