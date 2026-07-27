@@ -18,6 +18,7 @@ from league_history.analytics import (
     draft_tendencies,
     head_to_head_game_table,
     head_to_head_history,
+    injury_loss_detail,
     injury_luck,
     manager_profiles,
     player_profile_frames,
@@ -519,6 +520,10 @@ COLUMN_LABELS = {
     "slot_points": "Total Points",
     "weeks": "Weeks",
     "slot_points_per_week": "Pts/Week",
+    "weeks_out": "Weeks Out",
+    "injury_statuses": "Injury Statuses",
+    "draft_value": "Draft $ Value",
+    "value_source": "Value Source",
     "draft_value_score": "Hindsight Score",
     "draft_score": "Draft Score",
     "risk_avoidance_score": "Risk Avoidance",
@@ -853,6 +858,13 @@ def main() -> None:
             tables["injuries"],
             tables["teams"],
         )
+        injury_detail = injury_loss_detail(
+            tables["draft_picks"],
+            tables["auction_values"],
+            tables["roster_scores"],
+            tables["injuries"],
+            tables["teams"],
+        )
         if luck.empty:
             st.info("No matchup data available yet.")
         else:
@@ -938,6 +950,28 @@ def main() -> None:
                     )
                     st.plotly_chart(fig)
                 show_table(format_percent(aggregated_luck, ["all_play_win_pct", "actual_win_pct"]), "Show luck numbers")
+                if not injury_detail.empty:
+                    detail_cols = [
+                        "season",
+                        "manager_name",
+                        "team_name",
+                        "player_name",
+                        "weeks_out",
+                        "weeks",
+                        "injury_statuses",
+                        "draft_value",
+                        "injury_value_lost",
+                        "value_source",
+                    ]
+                    show_table(
+                        injury_detail[detail_cols].sort_values(
+                            ["season", "injury_value_lost", "weeks_out"],
+                            ascending=[True, False, False],
+                        ),
+                        "Show players lost to injury",
+                    )
+                else:
+                    st.caption("No matched injury-player losses for the selected filters.")
 
     with tab_h2h:
         st.caption("Head-to-head history between any two managers: record, margins, and every meeting week by week.")
@@ -1307,7 +1341,7 @@ def main() -> None:
                                     showlegend=False,
                                     height=280,
                                 )
-                                col.plotly_chart(polish_figure(fig), width="stretch")
+                                col.plotly_chart(polish_figure(fig), use_container_width=True)
                         show_table(slot_view, "Show slot-by-week numbers")
 
     with tab_projection:

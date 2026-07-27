@@ -412,6 +412,13 @@ def _member_name(member: dict[str, Any]) -> str:
 
 
 def _manager_for_team(team: dict[str, Any], members_by_id: dict[str, dict[str, Any]]) -> tuple[str, str]:
+    primary_owner = team.get("primaryOwner")
+    if primary_owner:
+        member = members_by_id.get(str(primary_owner))
+        if member:
+            return str(member.get("id") or primary_owner), _member_name(member)
+        return str(primary_owner), team.get("name") or f"Team {team.get('id')}"
+
     owners = team.get("owners") or []
     if owners:
         owner = owners[0]
@@ -421,12 +428,6 @@ def _manager_for_team(team: dict[str, Any], members_by_id: dict[str, dict[str, A
         if member:
             return str(member.get("id") or owner), _member_name(member)
         return str(owner), team.get("name") or f"Team {team.get('id')}"
-    primary_owner = team.get("primaryOwner")
-    if primary_owner:
-        member = members_by_id.get(str(primary_owner))
-        if member:
-            return str(member.get("id") or primary_owner), _member_name(member)
-        return str(primary_owner), team.get("name") or f"Team {team.get('id')}"
     return str(team.get("id")), team.get("name") or f"Team {team.get('id')}"
 
 
@@ -445,6 +446,18 @@ def _side_entries(side: dict[str, Any]) -> list[dict[str, Any]]:
     matchup = side.get("rosterForMatchupPeriod", {}).get("entries", []) or []
     current = side.get("rosterForCurrentScoringPeriod", {}).get("entries", []) or []
     return matchup or current
+
+
+def _lineup_slot_id(entry: dict[str, Any], pool_entry: dict[str, Any]) -> int | None:
+    for container in (entry, pool_entry):
+        for key in ("lineupSlotId", "lineup_slot_id", "lineupSlot"):
+            value = container.get(key)
+            if value is not None:
+                try:
+                    return int(value)
+                except (TypeError, ValueError):
+                    return None
+    return None
 
 
 def _projected_points(player: dict[str, Any], week: int) -> float | None:
@@ -567,8 +580,8 @@ def normalize_season(season: int, payload: dict[str, Any]) -> dict[str, pd.DataF
             )
             for entry in _side_entries(side):
                 player = entry.get("playerPoolEntry", {}).get("player", {})
-                lineup_slot = entry.get("lineupSlotId")
                 pool_entry = entry.get("playerPoolEntry", {})
+                lineup_slot = _lineup_slot_id(entry, pool_entry)
                 injury_status = (
                     player.get("injuryStatus")
                     or player.get("injury_status")

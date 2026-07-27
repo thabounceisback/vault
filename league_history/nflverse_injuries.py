@@ -29,7 +29,11 @@ def fetch_nflverse_injuries(seasons: Iterable[int]) -> tuple[pd.DataFrame, str]:
         package_error = None
 
     try:
-        frames = [_read_injury_csv(season) for season in season_list]
+        frames = []
+        for season in season_list:
+            frame = _read_injury_csv(season)
+            if not frame.empty:
+                frames.append(frame)
         raw = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
         return normalize_nflverse_injuries(raw, "nflverse_csv"), "nflverse_csv"
     except Exception as exc:
@@ -79,5 +83,7 @@ def normalize_nflverse_injuries(frame: pd.DataFrame, source: str) -> pd.DataFram
 def _read_injury_csv(season: int) -> pd.DataFrame:
     url = f"https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_{season}.csv"
     response = requests.get(url, timeout=30)
+    if response.status_code == 404:
+        return pd.DataFrame()
     response.raise_for_status()
     return pd.read_csv(BytesIO(response.content))
