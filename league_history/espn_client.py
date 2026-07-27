@@ -81,14 +81,34 @@ class EspnClient:
                 if espn_s2:
                     _set_cookie(self.session, "espn_s2", espn_s2, domain)
 
+    @staticmethod
+    def _has_league_data(response: requests.Response) -> bool:
+        if response.status_code >= 400 or response.is_redirect:
+            return False
+        try:
+            data = response.json()
+        except ValueError:
+            return False
+        if isinstance(data, list):
+            data = data[0] if data else {}
+        return bool(data.get("teams"))
+
     def fetch_season(self, season: int) -> dict[str, Any]:
         urls = self._modern_urls(season)
         params = self._season_params()
         response = self._get_first_available(urls, params=params)
-        if response.status_code == 404 or response.status_code >= 500:
-            urls = self._legacy_urls()
-            params = [("seasonId", str(season)), *self._season_params()]
-            response = self._get_first_available(urls, params=params)
+        if not self._has_league_data(response):
+            # Seasons from before ESPN's permanent per-league IDs (roughly pre-2018)
+            # only live under the legacy leagueHistory endpoint - and it often answers
+            # with a plain 200 and no teams rather than a clean 404, so a hard failure
+            # isn't the only trigger for trying it.
+            legacy_urls = self._legacy_urls()
+            legacy_params = [("seasonId", str(season)), *self._season_params()]
+            legacy_response = self._get_first_available(legacy_urls, params=legacy_params)
+            if self._has_league_data(legacy_response) or response.status_code == 404 or response.status_code >= 500:
+                urls = legacy_urls
+                params = legacy_params
+                response = legacy_response
         if response.is_redirect:
             location = response.headers.get("location", "unknown location")
             auth_state = self._auth_state()
@@ -116,6 +136,14 @@ class EspnClient:
             raise EspnSyncError(
                 f"ESPN returned a non-JSON response for season {season}. Check the league ID, season, and cookies."
             ) from exc
+
+        if not payload.get("teams"):
+            raise EspnSyncError(
+                f"ESPN has no league data for season {season} under league {self.config.league_id} on either the "
+                "current or legacy history API. Seasons from before ESPN introduced permanent league IDs "
+                "(~2018) are sometimes only reachable under that season's own league ID from that year, "
+                "not the current one."
+            )
 
         weeks = self._weeks_from_schedule(payload.get("schedule", []) or [])
         weekly_schedule = self._fetch_weekly_boxscores(season, urls, weeks, params)
@@ -530,7 +558,16 @@ def normalize_season(season: int, payload: dict[str, Any]) -> dict[str, pd.DataF
                 player = entry.get("playerPoolEntry", {}).get("player", {})
                 lineup_slot = entry.get("lineupSlotId")
                 pool_entry = entry.get("playerPoolEntry", {})
-                injury_status = player.get("injuryStatus") or player.get("injury_status")
+                injury_status = (
+                    player.get("injuryStatus")
+                    or player.get("injury_status")
+                    or pool_entry.get("injuryStatus")
+                )
+                # The IR roster slot is itself a reliable injury signal - the slot
+                # assignment is accurate for that historical week even in seasons/weeks
+                # where ESPN's own injuryStatus field on the player wasn't populated.
+                if not injury_status and lineup_slot == 21:
+                    injury_status = "INJURY_RESERVE"
                 applied_total = pool_entry.get("appliedStatTotal")
                 if applied_total is None:
                     applied_total = _actual_points(player, week)
@@ -566,19 +603,37 @@ def normalize_season(season: int, payload: dict[str, Any]) -> dict[str, pd.DataF
 
     transaction_rows = []
     for item in payload.get("transactions", []) or []:
-        team_id = item.get("teamId")
-        for player in item.get("items", []) or []:
-            player_id = player.get("playerId")
+        default_team_id = item.get("teamId")
+        txn_type = item.get("type")
+        for txn_item in item.get("items", []) or []:
+            player_id = txn_item.get("playerId")
             looked_up = player_lookup.get(int(player_id), {}) if player_id is not None else {}
+            # A trade's own top-level teamId only reflects whoever proposed it, which
+            # would attribute every player in the trade (both sides given away and
+            # received) to that one team. Each item carries its own to/from team for
+            # exactly this reason - prefer whichever team actually ended up with the
+            # player, falling back to the transaction-level teamId for plain
+            # adds/drops that don't set per-item team fields.
+            to_team = txn_item.get("toTeamId")
+            from_team = txn_item.get("fromTeamId")
+            if to_team not in (None, -1):
+                item_team_id = to_team
+            elif from_team not in (None, -1):
+                item_team_id = from_team
+            else:
+                item_team_id = default_team_id
+            counterparty = item.get("proposedTo")
+            if to_team not in (None, -1) and from_team not in (None, -1):
+                counterparty = from_team if item_team_id == to_team else to_team
             transaction_rows.append(
                 {
                     "season": season,
                     "week": item.get("scoringPeriodId"),
-                    "team_id": team_id,
-                    "transaction_type": item.get("type"),
+                    "team_id": item_team_id,
+                    "transaction_type": txn_item.get("type") or txn_type,
                     "player_id": player_id,
                     "player_name": looked_up.get("fullName"),
-                    "counterparty_team_id": item.get("proposedTo"),
+                    "counterparty_team_id": counterparty,
                 }
             )
 
@@ -606,15 +661,35 @@ def sync_espn_history(config: EspnConfig, db: Database) -> dict[str, Any]:
         "injuries": [],
         "transactions": [],
     }
+    failed_seasons: dict[int, str] = {}
+    synced_seasons: list[int] = []
     for season in config.seasons:
-        normalized = normalize_season(season, client.fetch_season(season))
+        # One old/unreachable season (pre-permanent-league-ID history, a since-deleted
+        # league, etc.) shouldn't sink an otherwise-good multi-season sync - skip it
+        # and keep going, same spirit as the per-week failure handling below.
+        try:
+            normalized = normalize_season(season, client.fetch_season(season))
+        except EspnSyncError as exc:
+            failed_seasons[season] = str(exc)
+            continue
+        synced_seasons.append(season)
         for name, frame in normalized.items():
             if not frame.empty:
                 merged[name].append(frame)
+
+    if not synced_seasons:
+        raise EspnSyncError(
+            "Could not sync any of the requested seasons. "
+            + "; ".join(f"{season}: {reason}" for season, reason in failed_seasons.items())
+        )
 
     frames = {
         name: pd.concat(parts, ignore_index=True) if parts else pd.DataFrame()
         for name, parts in merged.items()
     }
-    db.append_tables(frames, config.seasons)
-    return {"seasons_synced": len(config.seasons), "incomplete_weeks": client.failed_weeks}
+    db.append_tables(frames, synced_seasons)
+    return {
+        "seasons_synced": len(synced_seasons),
+        "incomplete_weeks": client.failed_weeks,
+        "failed_seasons": failed_seasons,
+    }

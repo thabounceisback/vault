@@ -9,7 +9,9 @@ from league_history.analytics import (
     all_time_records,
     head_to_head_game_table,
     head_to_head_history,
+    injury_luck,
     manager_profiles,
+    positional_hall_of_fame,
     positional_performance,
     transaction_scorecard,
 )
@@ -225,3 +227,68 @@ def test_all_time_leaderboards_dedupes_games_for_margin_categories():
     assert boards["highest_scores"].iloc[0]["points_for"] == 150.0
 
     assert set(boards["longest_win_streaks"]["manager_name"]) == {"Alex"}
+
+    # Alex: [120, 150] -> median 135. Bailey: [119, 90] -> median 104.5.
+    assert boards["best_season_medians"].iloc[0]["manager_name"] == "Alex"
+    assert boards["best_season_medians"].iloc[0]["median_points"] == 135.0
+
+
+def test_injury_luck_matches_injury_reserve_status():
+    teams = pd.DataFrame(
+        {"season": [2024, 2024], "team_id": [1, 2], "manager_name": ["Alex", "Bailey"], "team_name": ["A", "B"]}
+    )
+    luck = pd.DataFrame(
+        {
+            "season": [2024, 2024],
+            "team_id": [1, 2],
+            "manager_name": ["Alex", "Bailey"],
+            "team_name": ["A", "B"],
+            "luck_wins": [0.0, 0.0],
+            "actual_wins": [5, 5],
+        }
+    )
+    draft_picks = pd.DataFrame(
+        {"season": [2024], "team_id": [1], "player_id": [10], "player_name": ["Hurt Guy"]}
+    )
+    roster_scores = pd.DataFrame(
+        {
+            "season": [2024],
+            "week": [1],
+            "team_id": [1],
+            "player_id": [10],
+            "player_name": ["Hurt Guy"],
+            "position": ["RB"],
+            "slot": ["IR"],
+            "is_starter": [0],
+            "points": [0.0],
+            "injury_status": ["INJURY_RESERVE"],
+        }
+    )
+    result = injury_luck(luck, draft_picks, pd.DataFrame(), roster_scores, pd.DataFrame(), teams)
+    row = result[result["team_id"] == 1].iloc[0]
+    assert row["injured_player_weeks"] >= 1
+
+
+def test_positional_hall_of_fame_returns_one_row_per_slot():
+    teams = pd.DataFrame(
+        {"season": [2024, 2024], "team_id": [1, 2], "manager_name": ["Alex", "Bailey"], "team_name": ["A", "B"]}
+    )
+    roster_scores = pd.DataFrame(
+        {
+            "season": [2024, 2024, 2024, 2024],
+            "week": [1, 1, 1, 1],
+            "team_id": [1, 2, 1, 2],
+            "player_id": [1, 2, 3, 4],
+            "position": ["RB", "RB", "WR", "WR"],
+            "slot": ["RB", "RB", "WR", "WR"],
+            "is_starter": [1, 1, 1, 1],
+            "points": [30.0, 12.0, 8.0, 22.0],
+        }
+    )
+    result = positional_hall_of_fame(roster_scores, teams, top_n=1)
+    seasons = result["best_position_seasons"].set_index("slot")
+    weeks = result["best_position_weeks"].set_index("slot")
+    assert seasons.loc["RB", "manager_name"] == "Alex"
+    assert seasons.loc["WR", "manager_name"] == "Bailey"
+    assert weeks.loc["RB", "manager_name"] == "Alex"
+    assert weeks.loc["WR", "manager_name"] == "Bailey"

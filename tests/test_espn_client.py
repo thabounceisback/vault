@@ -54,7 +54,7 @@ def test_rb_wr_flex_slot_3_normalizes_to_flex():
     assert row["slot"] == "Flex"
     assert row["position"] == "RB"
     assert row["is_starter"] == 1
-    assert slot_role(row["position"], row["slot"]) == "Flex-RB"
+    assert slot_role(row["position"], row["slot"]) == "Flex"
 
 
 def test_superflex_op_slot_7_normalizes_to_flex():
@@ -100,3 +100,55 @@ def test_transaction_key_falls_back_without_id():
 def test_weeks_from_schedule_ignores_zero_and_dedupes():
     schedule = [{"matchupPeriodId": 1}, {"matchupPeriodId": 1}, {"matchupPeriodId": 2}, {"matchupPeriodId": 0}]
     assert EspnClient._weeks_from_schedule(schedule) == [1, 2]
+
+
+def test_ir_slot_counts_as_injured_even_without_injury_status():
+    entries = [_entry(404, "Hurt Guy", position_id=2, lineup_slot=21)]
+    payload = _base_payload([_game(1, 1, 2, entries, [])])
+    frames = normalize_season(2024, payload)
+    roster = frames["roster_scores"]
+    row = roster[roster["player_id"] == 404].iloc[0]
+    assert row["injury_status"] == "INJURY_RESERVE"
+    assert row["is_starter"] == 0
+
+
+def test_trade_attributes_each_player_to_the_team_that_received_them():
+    payload = _base_payload(
+        [_game(1, 1, 2, [], [])],
+        transactions=[
+            {
+                "id": "TR-1",
+                "type": "TRADE",
+                "teamId": 1,
+                "scoringPeriodId": 3,
+                "items": [
+                    {"playerId": 111, "toTeamId": 2, "fromTeamId": 1},
+                    {"playerId": 222, "toTeamId": 1, "fromTeamId": 2},
+                ],
+            }
+        ],
+    )
+    frames = normalize_season(2024, payload)
+    txns = frames["transactions"].set_index("player_id")
+    assert txns.loc[111, "team_id"] == 2
+    assert txns.loc[111, "counterparty_team_id"] == 1
+    assert txns.loc[222, "team_id"] == 1
+    assert txns.loc[222, "counterparty_team_id"] == 2
+
+
+def test_plain_add_still_uses_top_level_team_id_without_to_from_fields():
+    payload = _base_payload(
+        [_game(1, 1, 2, [], [])],
+        transactions=[
+            {
+                "id": "W-1",
+                "type": "WAIVER",
+                "teamId": 1,
+                "scoringPeriodId": 2,
+                "items": [{"playerId": 999}],
+            }
+        ],
+    )
+    frames = normalize_season(2024, payload)
+    txns = frames["transactions"]
+    assert txns.loc[0, "team_id"] == 1
