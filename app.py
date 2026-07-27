@@ -21,6 +21,7 @@ from league_history.analytics import (
     injury_luck,
     manager_profiles,
     player_profile_frames,
+    positional_hall_of_fame,
     positional_performance,
     projection_matchup_matrix,
     projection_performance,
@@ -397,6 +398,13 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
                             st.warning(
                                 "Some weekly boxscores failed to load and were skipped, so scoring/injury "
                                 f"data for those weeks may be incomplete ({details}). Try syncing again."
+                            )
+                        failed_seasons = result.get("failed_seasons") or {}
+                        if failed_seasons:
+                            details = "; ".join(f"{season}: {reason}" for season, reason in sorted(failed_seasons.items()))
+                            st.warning(
+                                "Some seasons couldn't be synced and were skipped - the rest loaded fine. "
+                                f"({details})"
                             )
                     except ValueError:
                         st.error("League ID must be a number.")
@@ -1540,7 +1548,40 @@ def main() -> None:
                     leaderboards["best_season_totals"],
                     {"season": "Season", "manager_name": "Manager", "team_name": "Team", "points_for": "Total Points"},
                 ),
+                (
+                    "📊 The Steady Hand",
+                    f"Top {top_n_choice} highest single-season median scores",
+                    leaderboards["best_season_medians"],
+                    {"season": "Season", "manager_name": "Manager", "team_name": "Team", "median_points": "Median Points"},
+                ),
             ]
+
+            _, transaction_details = transaction_scorecard(
+                tables["transactions"], tables["roster_scores"], tables["teams"]
+            )
+            if not transaction_details.empty:
+                pickup_cols = ["season", "week", "manager_name", "player_name", "future_points"]
+                pickup_renames = {
+                    "season": "Season",
+                    "week": "Week",
+                    "manager_name": "Manager",
+                    "player_name": "Player",
+                    "future_points": "Points After",
+                }
+                best_pickups = (
+                    transaction_details[transaction_details["score_type"] == "Pickup"]
+                    .sort_values("future_points", ascending=False)
+                    .head(top_n_choice)[pickup_cols]
+                    .reset_index(drop=True)
+                )
+                best_trades = (
+                    transaction_details[transaction_details["score_type"] == "Trade"]
+                    .sort_values("future_points", ascending=False)
+                    .head(top_n_choice)[pickup_cols]
+                    .reset_index(drop=True)
+                )
+                sections.append(("🎣 The Big Catch", f"Top {top_n_choice} waiver/free-agent pickups by points scored after", best_pickups, pickup_renames))
+                sections.append(("🤝 The Heist", f"Top {top_n_choice} trade acquisitions by points scored after", best_trades, pickup_renames))
 
             medals = {1: "🥇", 2: "🥈", 3: "🥉"}
 
@@ -1560,6 +1601,47 @@ def main() -> None:
                                     0, "Rank", [f"{medals.get(i, '')} {i}".strip() for i in range(1, len(display_df) + 1)]
                                 )
                                 st.dataframe(display_df, width="stretch", hide_index=True)
+
+            position_records = positional_hall_of_fame(tables["roster_scores"], tables["teams"])
+            best_position_seasons = position_records.get("best_position_seasons", pd.DataFrame())
+            best_position_weeks = position_records.get("best_position_weeks", pd.DataFrame())
+            if not best_position_seasons.empty or not best_position_weeks.empty:
+                position_renames = {
+                    "slot": "Position",
+                    "season": "Season",
+                    "manager_name": "Manager",
+                    "team_name": "Team",
+                    "total_points": "Total Points",
+                    "week_points": "Points",
+                    "week": "Week",
+                }
+                season_cols = ["slot", "season", "manager_name", "team_name", "total_points"]
+                week_cols = ["slot", "season", "week", "manager_name", "team_name", "week_points"]
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    with st.container(border=True):
+                        st.markdown("#### 🏛️ Best Season, By Position")
+                        st.caption("The single best season ever started at each roster slot.")
+                        if best_position_seasons.empty:
+                            st.info("Not enough data yet.")
+                        else:
+                            st.dataframe(
+                                best_position_seasons[season_cols].rename(columns=position_renames),
+                                width="stretch",
+                                hide_index=True,
+                            )
+                with col_b:
+                    with st.container(border=True):
+                        st.markdown("#### ⚡ Best Week, By Position")
+                        st.caption("The single best week ever started at each roster slot.")
+                        if best_position_weeks.empty:
+                            st.info("Not enough data yet.")
+                        else:
+                            st.dataframe(
+                                best_position_weeks[week_cols].rename(columns=position_renames),
+                                width="stretch",
+                                hide_index=True,
+                            )
 
 
 if __name__ == "__main__":

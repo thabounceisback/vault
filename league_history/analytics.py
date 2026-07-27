@@ -156,11 +156,13 @@ def injury_luck(
     if hurt.empty:
         out = base.assign(injury_value_lost=0.0, injured_player_weeks=0)
     else:
-        hurt["injury_status"] = hurt["injury_status"].fillna("").astype(str)
+        # ESPN's real status token is "INJURY_RESERVE" - since "_" counts as a word
+        # character, \b never splits it from RESERVE, so a plain word-boundary match
+        # for INJURY/IR would silently miss it. Swap underscores for spaces first so
+        # each status word gets its own boundary.
+        status_words = hurt["injury_status"].fillna("").astype(str).str.upper().str.replace("_", " ", regex=False)
         hurt = hurt[
-            hurt["injury_status"].str.contains(
-                r"\b(?:OUT|IR|INJURED|DNP|DOUBTFUL)\b", case=False, na=False, regex=True
-            )
+            status_words.str.contains(r"\b(?:OUT|IR|INJURY|INJURED|DNP|DOUBTFUL)\b", na=False, regex=True)
         ].copy()
         hurt["player_key"] = hurt["player_name"].fillna("").str.strip().str.lower()
         hurt = hurt.drop_duplicates(["season", "week", "player_id", "player_key"])
@@ -428,10 +430,10 @@ def positional_performance(roster_scores: pd.DataFrame, teams: pd.DataFrame) -> 
     if roster_scores.empty:
         return pd.DataFrame()
     starters = roster_scores[roster_scores["is_starter"] == 1].copy()
-    # Bucket by "Flex" (not the underlying position) whenever a player started in a flex
-    # slot, so flex usage shows up as its own column instead of being folded into
-    # whatever real position happened to fill it that week.
-    starters["position"] = starters["slot"].where(starters["slot"] == "Flex", starters["position"])
+    # Bucket by the roster slot a player actually started in (QB/RB/WR/TE/Flex/DST/K),
+    # not their real-world position - a Flex start should always show up as "Flex"
+    # regardless of whether an RB or a WR happened to fill it that week.
+    starters["position"] = starters["slot"]
     result = (
         starters.groupby(["season", "team_id", "position"], dropna=False)
         .agg(slot_points=("points", "sum"), weeks=("week", "nunique"))
@@ -442,11 +444,52 @@ def positional_performance(roster_scores: pd.DataFrame, teams: pd.DataFrame) -> 
 
 
 def slot_role(position: object, slot: object) -> str:
-    slot_name = str(slot or "UNK")
-    position_name = str(position or "UNK")
-    if slot_name.lower() == "flex":
-        return f"Flex-{position_name}"
-    return slot_name
+    """The roster slot a player started in - Flex is reported as plain "Flex", not
+    folded back into whatever real position happened to fill it that week."""
+    del position  # kept for call-site compatibility; slot alone is the roster spot that matters
+    return str(slot or "UNK")
+
+
+def positional_hall_of_fame(roster_scores: pd.DataFrame, teams: pd.DataFrame, top_n: int = 1) -> dict[str, pd.DataFrame]:
+    """One row per roster slot: the best individual season and best individual week
+    ever started at that slot - a compact "best ever, by position" comparison
+    instead of one leaderboard perpetually dominated by high-volume positions."""
+    empty = {"best_position_seasons": pd.DataFrame(), "best_position_weeks": pd.DataFrame()}
+    if roster_scores.empty or teams.empty:
+        return empty
+    starters = roster_scores[roster_scores["is_starter"] == 1].copy()
+    if starters.empty:
+        return empty
+
+    season_slot = (
+        starters.groupby(["season", "team_id", "slot"], dropna=False)["points"].sum().reset_index(name="total_points")
+    )
+    season_slot = _with_team(season_slot, teams)
+    best_position_seasons = (
+        season_slot.sort_values("total_points", ascending=False)
+        .groupby("slot", as_index=False)
+        .head(top_n)
+        .sort_values(["slot", "total_points"], ascending=[True, False])
+        .round({"total_points": 1})
+        .reset_index(drop=True)
+    )
+
+    week_slot = (
+        starters.groupby(["season", "week", "team_id", "slot"], dropna=False)["points"]
+        .sum()
+        .reset_index(name="week_points")
+    )
+    week_slot = _with_team(week_slot, teams)
+    best_position_weeks = (
+        week_slot.sort_values("week_points", ascending=False)
+        .groupby("slot", as_index=False)
+        .head(top_n)
+        .sort_values(["slot", "week_points"], ascending=[True, False])
+        .round({"week_points": 1})
+        .reset_index(drop=True)
+    )
+
+    return {"best_position_seasons": best_position_seasons, "best_position_weeks": best_position_weeks}
 
 
 def transaction_scorecard(transactions: pd.DataFrame, roster_scores: pd.DataFrame, teams: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -902,6 +945,16 @@ def all_time_leaderboards(matchups: pd.DataFrame, teams: pd.DataFrame, top_n: in
         .reset_index(drop=True)
     )
 
+    best_season_medians = (
+        games.groupby(["season", "manager_name", "team_name"], as_index=False)["points_for"]
+        .median()
+        .rename(columns={"points_for": "median_points"})
+        .sort_values("median_points", ascending=False)
+        .head(top_n)
+        .round({"median_points": 1})
+        .reset_index(drop=True)
+    )
+
     return {
         "highest_scores": highest_scores,
         "worst_losses": worst_losses,
@@ -910,4 +963,5 @@ def all_time_leaderboards(matchups: pd.DataFrame, teams: pd.DataFrame, top_n: in
         "longest_win_streaks": longest_win_streaks,
         "longest_loss_streaks": longest_loss_streaks,
         "best_season_totals": best_season_totals,
+        "best_season_medians": best_season_medians,
     }
