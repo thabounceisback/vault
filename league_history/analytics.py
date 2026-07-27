@@ -235,12 +235,137 @@ def estimated_draft_values(draft_picks: pd.DataFrame, known_values: pd.DataFrame
     return pd.concat(estimates, ignore_index=True) if estimates else pd.DataFrame()
 
 
+def inferred_drafted_absences(
+    values: pd.DataFrame,
+    roster_scores: pd.DataFrame,
+    season_weeks: pd.DataFrame,
+    explicit_detail: pd.DataFrame,
+    transactions: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    if values.empty or roster_scores.empty:
+        return pd.DataFrame()
+
+    rs = roster_scores.copy()
+    rs["week"] = pd.to_numeric(rs["week"], errors="coerce")
+    rs["team_id"] = pd.to_numeric(rs["team_id"], errors="coerce")
+    rs["player_id_key"] = rs["player_id"].where(rs["player_id"].notna(), "").astype(str)
+    rs = rs[rs["player_id_key"].ne("") & rs["week"].notna()]
+    if rs.empty:
+        return pd.DataFrame()
+
+    weeks = season_weeks.copy() if not season_weeks.empty else pd.DataFrame()
+    if weeks.empty:
+        weeks = rs.groupby("season")["week"].max().reset_index(name="season_weeks")
+
+    presence = (
+        rs.groupby(["season", "team_id", "player_id_key"], dropna=False)
+        .agg(first_seen_week=("week", "min"), last_seen_week=("week", "max"), roster_weeks=("week", "nunique"))
+        .reset_index()
+    )
+    league_presence = (
+        rs.groupby(["season", "player_id_key"], dropna=False)["week"]
+        .max()
+        .reset_index(name="league_last_seen_week")
+    )
+
+    candidates = values.copy()
+    candidates["team_id"] = pd.to_numeric(candidates["team_id"], errors="coerce")
+    candidates["auction_value"] = pd.to_numeric(candidates["auction_value"], errors="coerce").fillna(0)
+    candidates = candidates[
+        candidates["player_id_key"].ne("")
+        & candidates["team_id"].notna()
+        & (candidates["auction_value"] > 0)
+    ][["season", "team_id", "player_id_key", "player_name", "auction_value", "source"]].drop_duplicates(
+        ["season", "team_id", "player_id_key"]
+    )
+    if candidates.empty:
+        return pd.DataFrame()
+
+    inferred = (
+        candidates.merge(presence, on=["season", "team_id", "player_id_key"], how="inner")
+        .merge(league_presence, on=["season", "player_id_key"], how="left")
+        .merge(weeks, on="season", how="left")
+    )
+    if inferred.empty:
+        return pd.DataFrame()
+
+    inferred["season_weeks"] = pd.to_numeric(inferred["season_weeks"], errors="coerce").fillna(14).clip(lower=1)
+    inferred["missing_weeks"] = (inferred["season_weeks"] - inferred["last_seen_week"]).clip(lower=0)
+    inferred = inferred[
+        (inferred["missing_weeks"] >= 3)
+        & (inferred["league_last_seen_week"].fillna(0) <= inferred["last_seen_week"])
+    ].copy()
+    if inferred.empty:
+        return pd.DataFrame()
+
+    if transactions is not None and not transactions.empty:
+        tx = transactions.copy()
+        tx["week"] = pd.to_numeric(tx["week"], errors="coerce")
+        tx["team_id"] = pd.to_numeric(tx["team_id"], errors="coerce")
+        tx["player_id_key"] = tx["player_id"].where(tx["player_id"].notna(), "").astype(str)
+        tx = tx[tx["player_id_key"].ne("") & tx["week"].notna()]
+        if not tx.empty:
+            tx = tx[["season", "team_id", "player_id_key", "week", "transaction_type"]]
+            inferred = inferred.reset_index(drop=True).reset_index(names="_absence_id")
+            tx_hits = inferred[["_absence_id", "season", "team_id", "player_id_key", "last_seen_week"]].merge(
+                tx,
+                on=["season", "team_id", "player_id_key"],
+                how="left",
+            )
+            tx_hits = tx_hits[
+                tx_hits["week"].between(tx_hits["last_seen_week"], tx_hits["last_seen_week"] + 2, inclusive="both")
+            ]
+            inferred["has_exit_transaction"] = inferred["_absence_id"].isin(tx_hits["_absence_id"])
+            inferred = inferred[inferred["has_exit_transaction"]].drop(columns=["_absence_id", "has_exit_transaction"])
+        if inferred.empty:
+            return pd.DataFrame()
+
+    if not explicit_detail.empty:
+        explicit_keys = explicit_detail[["season", "team_id", "player_name"]].copy()
+        explicit_keys["team_id"] = pd.to_numeric(explicit_keys["team_id"], errors="coerce")
+        explicit_keys["player_key"] = _player_key(explicit_keys["player_name"])
+        inferred["player_key"] = _player_key(inferred["player_name"])
+        inferred = inferred.merge(
+            explicit_keys[["season", "team_id", "player_key"]].drop_duplicates().assign(has_explicit_injury=True),
+            on=["season", "team_id", "player_key"],
+            how="left",
+        )
+        inferred = inferred[inferred["has_explicit_injury"].isna()].drop(columns=["player_key", "has_explicit_injury"])
+        if inferred.empty:
+            return pd.DataFrame()
+
+    inferred["weeks_out"] = inferred["missing_weeks"].astype(int)
+    inferred["weeks"] = inferred.apply(
+        lambda row: ", ".join(str(week) for week in range(int(row["last_seen_week"]) + 1, int(row["season_weeks"]) + 1)),
+        axis=1,
+    )
+    inferred["injury_statuses"] = "Inferred absence after injury/drop"
+    inferred["draft_value"] = inferred["auction_value"].round(2)
+    inferred["injury_value_lost"] = (inferred["auction_value"] / inferred["season_weeks"] * inferred["missing_weeks"]).round(2)
+    inferred["value_source"] = inferred["source"].fillna("unknown") + ", inferred_absence"
+    inferred["team_id"] = inferred["team_id"].astype(int)
+    return inferred[
+        [
+            "season",
+            "team_id",
+            "player_name",
+            "weeks_out",
+            "weeks",
+            "injury_statuses",
+            "draft_value",
+            "injury_value_lost",
+            "value_source",
+        ]
+    ]
+
+
 def injury_loss_detail(
     draft_picks: pd.DataFrame,
     auction_values: pd.DataFrame,
     roster_scores: pd.DataFrame,
     injuries: pd.DataFrame,
     teams: pd.DataFrame,
+    transactions: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if draft_picks.empty:
         return pd.DataFrame()
@@ -265,67 +390,88 @@ def injury_loss_detail(
     else:
         hurt = pd.DataFrame(columns=["season", "week", "player_id", "player_name", "injury_status"])
 
-    if hurt.empty:
-        return pd.DataFrame()
-
-    # ESPN's real status token is "INJURY_RESERVE" - since "_" counts as a word
-    # character, \b never splits it from RESERVE, so a plain word-boundary match
-    # for INJURY/IR would silently miss it. Swap underscores for spaces first so
-    # each status word gets its own boundary.
-    status_words = hurt["injury_status"].fillna("").astype(str).str.upper().str.replace("_", " ", regex=False)
-    hurt = hurt[
-        status_words.str.contains(r"\b(?:OUT|IR|INJURY|INJURED|DNP|DOUBTFUL)\b", na=False, regex=True)
-    ].copy()
-    hurt["player_key"] = _player_key(hurt["player_name"])
-    hurt["player_id_key"] = hurt["player_id"].where(hurt["player_id"].notna(), "").astype(str)
-    hurt = hurt.drop_duplicates(["season", "week", "player_id", "player_key"])
-    if hurt.empty:
-        return pd.DataFrame()
-
     season_weeks = (
         roster_scores.groupby("season")["week"].nunique().reset_index(name="season_weeks")
         if not roster_scores.empty
         else pd.DataFrame()
     )
-    hurt_values = hurt.merge(values, on=["season", "player_id_key"], how="left", suffixes=("", "_value"))
-    missing = hurt_values["team_id"].isna() & hurt_values["player_key"].ne("")
-    if missing.any():
-        by_name = values.dropna(subset=["player_key"]).drop_duplicates(["season", "player_key"])
-        named = hurt_values.loc[missing, ["season", "player_key"]].merge(
-            by_name[["season", "player_key", "team_id", "auction_value", "source"]],
-            on=["season", "player_key"],
-            how="left",
+
+    detail = pd.DataFrame()
+    if not hurt.empty:
+        # ESPN's real status token is "INJURY_RESERVE" - since "_" counts as a word
+        # character, \b never splits it from RESERVE, so a plain word-boundary match
+        # for INJURY/IR would silently miss it. Swap underscores for spaces first so
+        # each status word gets its own boundary.
+        status_words = hurt["injury_status"].fillna("").astype(str).str.upper().str.replace("_", " ", regex=False)
+        hurt = hurt[
+            status_words.str.contains(r"\b(?:OUT|IR|INJURY|INJURED|DNP|DOUBTFUL)\b", na=False, regex=True)
+        ].copy()
+        hurt["player_key"] = _player_key(hurt["player_name"])
+        hurt["player_id_key"] = hurt["player_id"].where(hurt["player_id"].notna(), "").astype(str)
+        hurt = hurt.drop_duplicates(["season", "week", "player_id", "player_key"])
+
+    if not hurt.empty:
+        hurt_values = hurt.merge(values, on=["season", "player_id_key"], how="left", suffixes=("", "_value"))
+        missing = hurt_values["team_id"].isna() & hurt_values["player_key"].ne("")
+        if missing.any():
+            by_name = values.dropna(subset=["player_key"]).drop_duplicates(["season", "player_key"])
+            named = hurt_values.loc[missing, ["season", "player_key"]].merge(
+                by_name[["season", "player_key", "team_id", "auction_value", "source"]],
+                on=["season", "player_key"],
+                how="left",
+            )
+            hurt_values.loc[missing, "team_id"] = named["team_id"].to_numpy()
+            hurt_values.loc[missing, "auction_value"] = named["auction_value"].to_numpy()
+            hurt_values.loc[missing, "source_value"] = named["source"].to_numpy()
+        hurt_values = hurt_values.merge(season_weeks, on="season", how="left")
+        hurt_values["season_weeks"] = pd.to_numeric(hurt_values["season_weeks"], errors="coerce").fillna(14).clip(lower=1)
+        hurt_values["auction_value"] = pd.to_numeric(hurt_values["auction_value"], errors="coerce").fillna(0)
+        hurt_values["injury_value_lost"] = hurt_values["auction_value"] / hurt_values["season_weeks"]
+        hurt_values["matched_player_name"] = hurt_values.get("player_name_value", hurt_values["player_name"]).fillna(
+            hurt_values["player_name"]
         )
-        hurt_values.loc[missing, "team_id"] = named["team_id"].to_numpy()
-        hurt_values.loc[missing, "auction_value"] = named["auction_value"].to_numpy()
-        hurt_values.loc[missing, "source_value"] = named["source"].to_numpy()
-    hurt_values = hurt_values.merge(season_weeks, on="season", how="left")
-    hurt_values["season_weeks"] = pd.to_numeric(hurt_values["season_weeks"], errors="coerce").fillna(14).clip(lower=1)
-    hurt_values["auction_value"] = pd.to_numeric(hurt_values["auction_value"], errors="coerce").fillna(0)
-    hurt_values["injury_value_lost"] = hurt_values["auction_value"] / hurt_values["season_weeks"]
-    hurt_values["matched_player_name"] = hurt_values.get("player_name_value", hurt_values["player_name"]).fillna(
-        hurt_values["player_name"]
-    )
-    source_fallback = (
-        hurt_values["source"]
-        if "source" in hurt_values.columns
-        else pd.Series("unknown", index=hurt_values.index)
-    )
-    source_values = hurt_values["source_value"] if "source_value" in hurt_values.columns else source_fallback
-    hurt_values["value_source"] = source_values.fillna(source_fallback).fillna("unknown")
+        source_fallback = (
+            hurt_values["source"]
+            if "source" in hurt_values.columns
+            else pd.Series("unknown", index=hurt_values.index)
+        )
+        source_values = hurt_values["source_value"] if "source_value" in hurt_values.columns else source_fallback
+        hurt_values["value_source"] = source_values.fillna(source_fallback).fillna("unknown")
+        detail = (
+            hurt_values.dropna(subset=["team_id"])
+            .groupby(["season", "team_id", "matched_player_name"], dropna=False)
+            .agg(
+                weeks_out=("week", "nunique"),
+                weeks=("week", lambda values: ", ".join(str(int(value)) for value in sorted(set(values.dropna())))),
+                injury_statuses=("injury_status", lambda values: ", ".join(sorted(set(str(value) for value in values.dropna())))),
+                draft_value=("auction_value", "max"),
+                injury_value_lost=("injury_value_lost", "sum"),
+                value_source=("value_source", lambda values: ", ".join(sorted(set(str(value) for value in values.dropna())))),
+            )
+            .reset_index()
+            .rename(columns={"matched_player_name": "player_name"})
+        )
+        detail["draft_value"] = detail["draft_value"].round(2)
+        detail["injury_value_lost"] = detail["injury_value_lost"].round(2)
+        detail["team_id"] = detail["team_id"].astype(int)
+
+    inferred = inferred_drafted_absences(values, roster_scores, season_weeks, detail, transactions)
+    if not inferred.empty:
+        detail = pd.concat([detail, inferred], ignore_index=True) if not detail.empty else inferred
+    if detail.empty:
+        return pd.DataFrame()
+
     detail = (
-        hurt_values.dropna(subset=["team_id"])
-        .groupby(["season", "team_id", "matched_player_name"], dropna=False)
+        detail.groupby(["season", "team_id", "player_name"], dropna=False)
         .agg(
-            weeks_out=("week", "nunique"),
-            weeks=("week", lambda values: ", ".join(str(int(value)) for value in sorted(set(values.dropna())))),
-            injury_statuses=("injury_status", lambda values: ", ".join(sorted(set(str(value) for value in values.dropna())))),
-            draft_value=("auction_value", "max"),
+            weeks_out=("weeks_out", "sum"),
+            weeks=("weeks", lambda values: ", ".join(dict.fromkeys(str(value) for value in values.dropna()))),
+            injury_statuses=("injury_statuses", lambda values: ", ".join(dict.fromkeys(str(value) for value in values.dropna()))),
+            draft_value=("draft_value", "max"),
             injury_value_lost=("injury_value_lost", "sum"),
-            value_source=("value_source", lambda values: ", ".join(sorted(set(str(value) for value in values.dropna())))),
+            value_source=("value_source", lambda values: ", ".join(dict.fromkeys(str(value) for value in values.dropna()))),
         )
         .reset_index()
-        .rename(columns={"matched_player_name": "player_name"})
     )
     detail["draft_value"] = detail["draft_value"].round(2)
     detail["injury_value_lost"] = detail["injury_value_lost"].round(2)
@@ -342,6 +488,7 @@ def injury_luck(
     roster_scores: pd.DataFrame,
     injuries: pd.DataFrame,
     teams: pd.DataFrame,
+    transactions: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if luck.empty:
         return pd.DataFrame()
@@ -351,7 +498,7 @@ def injury_luck(
     if draft_picks.empty:
         return base.assign(injury_value_lost=0.0, injured_player_weeks=0, injury_luck_index=0.0, overall_luck_index=0.0)
 
-    detail = injury_loss_detail(draft_picks, auction_values, roster_scores, injuries, teams)
+    detail = injury_loss_detail(draft_picks, auction_values, roster_scores, injuries, teams, transactions)
     if detail.empty:
         out = base.assign(injury_value_lost=0.0, injured_player_weeks=0)
     else:

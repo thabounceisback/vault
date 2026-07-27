@@ -857,6 +857,7 @@ def main() -> None:
             tables["roster_scores"],
             tables["injuries"],
             tables["teams"],
+            tables["transactions"],
         )
         injury_detail = injury_loss_detail(
             tables["draft_picks"],
@@ -864,6 +865,7 @@ def main() -> None:
             tables["roster_scores"],
             tables["injuries"],
             tables["teams"],
+            tables["transactions"],
         )
         if luck.empty:
             st.info("No matchup data available yet.")
