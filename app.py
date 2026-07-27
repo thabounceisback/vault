@@ -35,77 +35,78 @@ from league_history.storage import Database
 
 DB_PATH = Path("data/league_history.sqlite")
 
-# --- The Vault x Seinfeld brand system -------------------------------------
-# A dark bank-vault backdrop (this is "The Vault", after all) with brass/gold
-# trim, lit up with a Seinfeld-inspired accent palette. Fun names go on the
-# chrome - tab titles, chart titles, headers, empty states - never on the
-# functional widget labels/errors, so the app stays easy to actually use.
+# --- The Fantasy Vault brand system -----------------------------------------
+# A torchlit treasure-hall backdrop (this is "the vault", after all) - obsidian
+# stone, aged gold trim, and a jewel-tone accent palette for the relics/records
+# on display. Fun names go on the chrome - tab titles, chart titles, headers,
+# empty states - never on the functional widget labels/errors, so the app
+# stays easy to actually use.
 BRAND = {
-    "mustard": "#E3A518",       # the puffy shirt
-    "kramer_red": "#C1272D",    # Kramer's front door
-    "jerry_blue": "#2E5A8C",    # Jerry's button-down
-    "elaine_green": "#4C9A2A",  # Elaine's dancing
-    "newman_brown": "#8B5E34",  # Newman's postal uniform
-    "festivus_silver": "#B7B7B0",  # the aluminum pole
-    "vandelay_teal": "#1F8A82",    # Art Vandelay, importer/exporter
-    "soup_orange": "#E0651B",      # the Soup Nazi's counter
-    "bizarro_purple": "#6A4C93",   # Bizarro world
-    "mint": "#8FD9C4",              # the Junior Mint
-    "vault_bg": "#0e0b08",
-    "vault_panel": "#1a140f",
-    "cream": "#F4EFE6",
+    "gold": "#D4AF37",        # the vault door, trophies, primary accent
+    "old_gold": "#8C6D1F",    # dimmer gold for borders/hover states
+    "ruby": "#B0223F",
+    "sapphire": "#2A5DB0",
+    "emerald": "#1E8F5F",
+    "amethyst": "#7B4FA6",
+    "topaz": "#E0932A",
+    "aquamarine": "#3FA9A4",
+    "bronze": "#8C6A3F",
+    "pewter": "#B9B2A4",       # muted secondary text
+    "obsidian": "#0B0906",     # page background
+    "stone": "#17130D",        # panel/card background
+    "parchment": "#F0E6D2",    # primary text
 }
 COLORWAY = [
-    BRAND["mustard"],
-    BRAND["kramer_red"],
-    BRAND["jerry_blue"],
-    BRAND["elaine_green"],
-    BRAND["newman_brown"],
-    BRAND["festivus_silver"],
-    BRAND["vandelay_teal"],
-    BRAND["soup_orange"],
-    BRAND["bizarro_purple"],
-    BRAND["mint"],
+    BRAND["gold"],
+    BRAND["ruby"],
+    BRAND["sapphire"],
+    BRAND["emerald"],
+    BRAND["amethyst"],
+    BRAND["topaz"],
+    BRAND["aquamarine"],
+    BRAND["bronze"],
+    BRAND["pewter"],
 ]
 PLOT_TEMPLATE = "plotly_dark"
-DISPLAY_FONT = "'Oswald', 'Arial Narrow Bold', 'Segoe UI', sans-serif"
+DISPLAY_FONT = "'Cinzel', 'Georgia', 'Times New Roman', serif"
 BODY_FONT = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 
 
 st.set_page_config(
-    page_title="The Vault — A League About Nothing",
-    page_icon="🥨",
+    page_title="The Fantasy Vault — League History & Records",
+    page_icon="🏆",
     layout="wide",
 )
 
 st.markdown(
     f"""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700;900&display=swap');
     .stApp {{
         background:
-            radial-gradient(circle at 18% 0%, rgba(227, 165, 24, 0.14), transparent 30rem),
-            radial-gradient(circle at 85% 6%, rgba(193, 39, 45, 0.10), transparent 32rem),
-            {BRAND["vault_bg"]};
+            radial-gradient(circle at 18% 0%, rgba(212, 175, 55, 0.14), transparent 30rem),
+            radial-gradient(circle at 85% 6%, rgba(176, 34, 63, 0.10), transparent 32rem),
+            {BRAND["obsidian"]};
     }}
     [data-testid="stSidebar"] {{
-        background: {BRAND["vault_panel"]};
-        border-right: 1px solid rgba(227, 165, 24, 0.18);
+        background: {BRAND["stone"]};
+        border-right: 1px solid rgba(212, 175, 55, 0.18);
     }}
     h1, h2, h3 {{
-        font-family: {DISPLAY_FONT};
+        font-family: {DISPLAY_FONT} !important;
         letter-spacing: 0.02em;
-        color: {BRAND["cream"]};
+        color: {BRAND["parchment"]};
     }}
-    p, span, label, div {{ font-family: {BODY_FONT}; }}
+    p, span, label, div {{ font-family: {BODY_FONT} !important; }}
+    [data-testid="stIconMaterial"] {{ font-family: 'Material Symbols Rounded' !important; }}
     div[data-testid="stMetric"] {{
-        background: rgba(227, 165, 24, 0.06);
-        border: 1px solid rgba(227, 165, 24, 0.28);
+        background: rgba(212, 175, 55, 0.06);
+        border: 1px solid rgba(212, 175, 55, 0.28);
         border-radius: 8px;
         padding: 14px 16px;
     }}
     [data-testid="stMetricLabel"], [data-testid="stMetricLabel"] * {{
-        color: {BRAND["festivus_silver"]};
+        color: {BRAND["pewter"]};
         white-space: normal !important;
         overflow: visible !important;
         text-overflow: clip !important;
@@ -123,7 +124,7 @@ st.markdown(
     }}
     div[data-testid="stTabs"] [role="tablist"] {{
         gap: 4px;
-        border-bottom: 1px solid rgba(227, 165, 24, 0.22);
+        border-bottom: 1px solid rgba(212, 175, 55, 0.22);
         flex-wrap: wrap !important;
         overflow: visible !important;
         height: auto !important;
@@ -131,40 +132,40 @@ st.markdown(
     div[data-testid="stTabs"] [data-testid="stTab"] {{
         border-radius: 8px 8px 0 0;
         padding: 8px 10px;
-        font-family: {DISPLAY_FONT};
+        font-family: {DISPLAY_FONT} !important;
         font-size: 0.92rem;
     }}
     div[data-testid="stTabs"] [aria-selected="true"] {{
-        color: {BRAND["mustard"]} !important;
+        color: {BRAND["gold"]} !important;
     }}
     .stButton > button {{
-        border: 1px solid rgba(227, 165, 24, 0.35);
+        border: 1px solid rgba(212, 175, 55, 0.35);
     }}
     .stButton > button:hover {{
-        border-color: {BRAND["mustard"]};
-        color: {BRAND["mustard"]};
+        border-color: {BRAND["gold"]};
+        color: {BRAND["gold"]};
     }}
     .vault-tagline {{
-        color: {BRAND["festivus_silver"]};
+        color: {BRAND["pewter"]};
         font-style: italic;
         margin-top: -0.6rem;
     }}
     div[data-testid="stVerticalBlock"][style*="border"] {{
-        background: rgba(227, 165, 24, 0.035);
+        background: rgba(212, 175, 55, 0.035);
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
     }}
     .vault-chart-head {{
-        font-family: {DISPLAY_FONT};
+        font-family: {DISPLAY_FONT} !important;
         font-size: 1.15rem;
         font-weight: 600;
-        color: {BRAND["mustard"]};
+        color: {BRAND["gold"]};
         line-height: 1.3;
         margin-bottom: 1px;
     }}
     .vault-chart-sub {{
-        font-family: {BODY_FONT};
+        font-family: {BODY_FONT} !important;
         font-size: 0.85rem;
-        color: {BRAND["festivus_silver"]};
+        color: {BRAND["pewter"]};
         opacity: 0.85;
         margin-bottom: 10px;
         line-height: 1.35;
@@ -283,8 +284,8 @@ def normalize_import(frame: pd.DataFrame, import_type: str) -> tuple[pd.DataFram
 
 def sidebar(db: Database) -> tuple[list[int], list[str]]:
     with st.sidebar:
-        st.markdown("## 🥨 The Vault")
-        st.markdown("<p class='vault-tagline'>A league about nothing.</p>", unsafe_allow_html=True)
+        st.markdown("## 🏆 The Fantasy Vault")
+        st.markdown("<p class='vault-tagline'>Every season becomes a relic.</p>", unsafe_allow_html=True)
         tables = apply_owner_aliases(load_tables(str(DB_PATH), db_cache_key()))
         profiles = tables.get("league_profiles", pd.DataFrame())
 
@@ -340,7 +341,7 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
                 try:
                     db.save_league_profile(int(league_id), league_name.strip() or "My League", seasons_text)
                     st.cache_data.clear()
-                    st.success("League saved. Not that there's anything wrong with that.")
+                    st.success("League saved to the vault.")
                 except ValueError:
                     st.error("League ID must be a number before saving.")
 
@@ -348,13 +349,13 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
                 if db.is_empty():
                     seed_sample_database(db, replace=True)
                     st.cache_data.clear()
-                    st.success("Sample league loaded. Yada yada yada, you have data.")
+                    st.success("Sample league loaded. The vault is stocked.")
                 else:
                     st.session_state["confirm_load_sample"] = True
 
             if st.session_state.get("confirm_load_sample"):
                 st.warning(
-                    "Serenity now! This will permanently replace your current league data "
+                    "This will permanently replace your current league data "
                     "(synced ESPN history, uploaded CSVs, etc.) with generated sample data."
                 )
                 confirm_col, cancel_col = st.columns(2)
@@ -383,7 +384,7 @@ def sidebar(db: Database) -> tuple[list[int], list[str]]:
                             espn_s2=espn_s2 or None,
                             cookie_header=cookie_header or None,
                         )
-                        with st.spinner("Pulling ESPN history... master of your domain any second now."):
+                        with st.spinner("Pulling ESPN history... the vault door is opening."):
                             result = sync_espn_history(config, db)
                         st.cache_data.clear()
                         st.success(f"Synced {result['seasons_synced']} season(s).")
@@ -595,9 +596,9 @@ def _color_map(values: pd.Series) -> dict[object, str]:
 
 
 def render_chart_header(headline: str, subtitle: str) -> None:
-    """A Seinfeld-flavored headline over a plain-English subtitle, rendered as normal
-    wrapping HTML above the chart - unlike Plotly's own title, this never clips or
-    gets cut off in a narrow column."""
+    """A themed headline over a plain-English subtitle, rendered as normal wrapping
+    HTML above the chart - unlike Plotly's own title, this never clips or gets cut
+    off in a narrow column."""
     st.markdown(
         f"<div class='vault-chart-head'>{headline}</div><div class='vault-chart-sub'>{subtitle}</div>",
         unsafe_allow_html=True,
@@ -614,8 +615,8 @@ def polish_figure(fig: go.Figure) -> go.Figure:
         template=PLOT_TEMPLATE,
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(227, 165, 24, 0.03)",
-        font={"family": BODY_FONT, "color": BRAND["cream"]},
-        title={"text": existing_title or "", "font": {"family": DISPLAY_FONT, "size": 20, "color": BRAND["mustard"]}},
+        font={"family": BODY_FONT, "color": BRAND["parchment"]},
+        title={"text": existing_title or "", "font": {"family": DISPLAY_FONT, "size": 20, "color": BRAND["gold"]}},
         margin={"l": 40, "r": 20, "t": 24, "b": 42},
         # Horizontal, below the plot: a right-side legend eats plot width, which
         # gets painful once a chart is squeezed into half a card.
@@ -767,8 +768,8 @@ def main() -> None:
         tables[name] = manager_filter(df, selected_managers)
     teams = tables["teams"]
 
-    st.title("🥨 The Vault")
-    st.caption("A League About Nothing — draft habits, schedule luck, slot pain, and all-time receipts, for the record.")
+    st.title("🏆 The Fantasy Vault")
+    st.caption("Draft hauls, schedule fortune, roster relics, and the all-time hall of fame — every season, cataloged.")
 
     if not teams.empty:
         season_count = teams["season"].nunique()
@@ -779,7 +780,7 @@ def main() -> None:
             else 0
         )
         st.markdown(
-            f"<span style='color:{BRAND['festivus_silver']}'>📊 "
+            f"<span style='color:{BRAND['pewter']}'>📊 "
             f"{season_count} season{'s' if season_count != 1 else ''} &nbsp;·&nbsp; "
             f"{manager_count} manager{'s' if manager_count != 1 else ''} &nbsp;·&nbsp; "
             f"{game_count} game{'s' if game_count != 1 else ''} logged</span>",
@@ -794,11 +795,11 @@ def main() -> None:
             )
         else:
             with st.container(border=True):
-                st.markdown("## 🥨 Nothing's here yet.")
+                st.markdown("## 🗝️ The vault is empty.")
                 st.write(
-                    "The Vault is empty — yada yada yada, no league data. Load the generated sample "
-                    "league below to explore the dashboard, or open **League Setup** in the sidebar to "
-                    "sync your real ESPN league."
+                    "No treasure has been logged yet. Load the generated sample league below to "
+                    "explore the halls, or open **League Setup** in the sidebar to sync your real "
+                    "ESPN league."
                 )
                 if st.button("🎲 Load the sample league", type="primary"):
                     seed_sample_database(db, replace=True)
@@ -809,24 +810,24 @@ def main() -> None:
     records = all_time_records(tables["matchups"], tables["teams"])
     metric_row(
         [
-            ("Feats of Strength", records.get("highest_score", "n/a"), "Highest single-week score in league history."),
-            ("Serenity Now", records.get("worst_loss", "n/a"), "The lowest score that still somehow took the loss."),
-            ("Master of My Domain", records.get("longest_win_streak", "n/a"), "Longest winning streak in a single season."),
-            ("Shrinkage", records.get("closest_loss", "n/a"), "The closest margin of defeat on record."),
+            ("Legendary Haul", records.get("highest_score", "n/a"), "Highest single-week score in league history."),
+            ("The Devastating Loss", records.get("worst_loss", "n/a"), "The lowest score that still somehow took the loss."),
+            ("The Reign", records.get("longest_win_streak", "n/a"), "Longest winning streak in a single season."),
+            ("The Coin Flip", records.get("closest_loss", "n/a"), "The closest margin of defeat on record."),
         ]
     )
 
     tab_luck, tab_h2h, tab_draft, tab_transactions, tab_player, tab_projection, tab_positions, tab_profiles, tab_records = st.tabs(
         [
-            "🌌 Bizarro World",
-            "☎️ Hello, Newman",
-            "💼 Vandelay Inc.",
-            "🎁 The Regift",
-            "👔 The Puffy Shirt",
-            "🔮 No Points For You",
-            "🥗 The Big Salad",
-            "🔄 The Opposite",
-            "🏁 The Finale",
+            "⚖️ Fortune's Favor",
+            "⚔️ Rivalries",
+            "⛏️ The Excavation",
+            "💰 The Trading Post",
+            "🔍 The Appraisal",
+            "🔮 The Oracle",
+            "💎 The Collection",
+            "🧭 The Expedition",
+            "🏆 Hall of Fame",
         ]
     )
 
@@ -882,7 +883,7 @@ def main() -> None:
                 aggregated_luck = aggregate_luck(chart_luck, granularity)
                 if view_mode == "Actual vs all-play":
                     render_chart_header(
-                        "Bizarro World vs. Real World",
+                        "Fortune vs. Form",
                         "Actual win % vs. all-play win % — the record you'd have if you played everyone, every week.",
                     )
                     fig = scatter_figure(
@@ -903,7 +904,7 @@ def main() -> None:
                     )
                 elif view_mode == "Trend" and "season" in aggregated_luck.columns and len(granularity) > 1:
                     color_dim = "manager_name" if "manager_name" in aggregated_luck.columns else granularity[-1]
-                    render_chart_header("Yada Yada, Over Time", f"{score_metric.replace('_', ' ').title()} across seasons.")
+                    render_chart_header("The Tides of Fortune", f"{score_metric.replace('_', ' ').title()} across seasons.")
                     fig = line_figure(
                         aggregated_luck,
                         "season",
@@ -917,7 +918,7 @@ def main() -> None:
                 else:
                     x_dim = "manager_name" if "manager_name" in aggregated_luck.columns else (granularity[0] if granularity else "season")
                     color_dim = "season" if "season" in aggregated_luck.columns and x_dim != "season" else x_dim
-                    render_chart_header("The Bizarro Leaderboard", f"{score_metric.replace('_', ' ').title()}, ranked.")
+                    render_chart_header("The Fortune Rankings", f"{score_metric.replace('_', ' ').title()}, ranked.")
                     fig = grouped_bar_figure(
                         aggregated_luck.sort_values(score_metric, ascending=score_metric == "injury_value_lost"),
                         x_dim,
@@ -952,7 +953,7 @@ def main() -> None:
                             f"{int(row.wins)}-{int(row.losses)}",
                             f"{row.avg_margin:+.2f} avg margin",
                         )
-                    render_chart_header(f"Hello, {manager_b}.", f"{manager_a} vs. {manager_b} — points scored in every meeting.")
+                    render_chart_header(f"Old Rivals: {manager_a} vs. {manager_b}", f"{manager_a} vs. {manager_b} — points scored in every meeting.")
                     fig = line_figure(
                         h2h_games,
                         "game_label",
@@ -1026,7 +1027,7 @@ def main() -> None:
                 if tendencies_view.empty:
                     st.info("No draft data available.")
                 else:
-                    render_chart_header("Draft Day at Vandelay Industries", "Position mix of each manager's early-round picks.")
+                    render_chart_header("The Excavation Site", "Position mix of each manager's early-round picks.")
                     fig = grouped_bar_figure(
                         tendencies_view,
                         "manager_name",
@@ -1044,7 +1045,7 @@ def main() -> None:
                 if hindsight_view.empty:
                     st.info("Hindsight draft grades need draft picks plus player scoring lines.")
                 else:
-                    render_chart_header("20/20 Hindsight", "Draft value once the season actually happened - higher is better.")
+                    render_chart_header("Buried Treasure", "Draft value once the season actually happened - higher is better.")
                     fig = ranked_bar_figure(
                         hindsight_view,
                         "manager_name",
@@ -1058,7 +1059,7 @@ def main() -> None:
 
         if not scorecard_view.empty:
             with st.container(border=True):
-                render_chart_header("The Vandelay Scorecard", "Composite draft score: risk avoidance, lineup construction, sleeper value.")
+                render_chart_header("The Dig Report", "Composite draft score: risk avoidance, lineup construction, sleeper value.")
                 fig = ranked_bar_figure(
                     scorecard_view,
                     "manager_name",
@@ -1101,7 +1102,7 @@ def main() -> None:
             st.info("No transaction data available.")
         else:
             with st.container(border=True):
-                render_chart_header("The Regift Report", "Composite transaction score from adds, trades, and drops.")
+                render_chart_header("The Trading Post Report", "Composite transaction score from adds, trades, and drops.")
                 fig = grouped_bar_figure(
                     scores,
                     "manager_name",
@@ -1134,7 +1135,7 @@ def main() -> None:
                 drops = details[details["score_type"] == "Unfortunate drop"].sort_values("future_points", ascending=False)
                 if not drops.empty:
                     with st.container(border=True):
-                        st.subheader("Kramer's Bad Idea")
+                        st.subheader("The One That Got Away")
                         st.caption("Players you dropped who kept scoring — just not for you.")
                         show_table(
                             drops[
@@ -1167,7 +1168,7 @@ def main() -> None:
                         if source_share.empty:
                             st.info("No acquisition source split available.")
                         else:
-                            render_chart_header("Where'd You Get That?", "Starter points by how each player was acquired.")
+                            render_chart_header("Provenance", "Starter points by how each player was acquired.")
                             fig = go.Figure(
                                 go.Pie(
                                     labels=source_share["acquisition_source"],
@@ -1185,7 +1186,7 @@ def main() -> None:
                 with c_hist:
                     with st.container(border=True):
                         render_chart_header(
-                            "You vs. The Field", "Weekly starter points for this manager vs. the league median that week."
+                            "Your Haul vs. The Field", "Weekly starter points for this manager vs. the league median that week."
                         )
                         fig = go.Figure()
                         fig.add_trace(
@@ -1223,7 +1224,7 @@ def main() -> None:
                                 how="outer",
                             ).fillna(0)
                             render_chart_header(
-                                "You vs. Everyone Else",
+                                "Your Provenance vs. The Vault",
                                 "This manager's acquisition-source point share vs. the league average.",
                             )
                             fig = go.Figure()
@@ -1253,7 +1254,7 @@ def main() -> None:
 
                 if not slot_weekly.empty:
                     with st.container(border=True):
-                        st.subheader("🎰 Slot Machine")
+                        st.subheader("🏺 The Reliquary")
                         slot_roles = sorted(slot_weekly["slot_role"].dropna().unique().tolist())
                         slot_filter = st.multiselect(
                             "Roster slots",
@@ -1265,7 +1266,7 @@ def main() -> None:
                         st.markdown(
                             f"<span style='color:{COLORWAY[0]}'>&#9632;</span> {selected_profile_manager} "
                             f"&nbsp;&nbsp; <span style='color:{COLORWAY[3]}'>&#9632;</span> League median "
-                            "&nbsp;&nbsp; <span style='opacity:0.7'>one panel per roster slot, same idea as \"You vs. The Field\".</span>",
+                            "&nbsp;&nbsp; <span style='opacity:0.7'>one panel per roster slot, same idea as \"Your Haul vs. The Field\".</span>",
                             unsafe_allow_html=True,
                         )
                         slot_view = slot_weekly[slot_weekly["slot_role"].isin(active_slots)]
@@ -1325,7 +1326,7 @@ def main() -> None:
 
                 c1, c2 = st.columns([1, 1])
                 with c1:
-                    render_chart_header("Beating the Odds", "Actual points vs. projected — above the line means you overperformed.")
+                    render_chart_header("Prophecy vs. Reality", "Actual points vs. projected — above the line means you overperformed.")
                     fig = scatter_figure(
                         projection,
                         "projected_points",
@@ -1358,7 +1359,7 @@ def main() -> None:
                         .round({"average_delta": 2, "beat_projection_pct": 3})
                     )
                     render_chart_header(
-                        "The Overperformers", "Average points over projection per manager, colored by how often they beat it."
+                        "Prophecy Breakers", "Average points over projection per manager, colored by how often they beat it."
                     )
                     fig = go.Figure(
                         go.Bar(
@@ -1377,7 +1378,7 @@ def main() -> None:
             if not matrix.empty:
                 with st.container(border=True):
                     render_chart_header(
-                        "Big Dog, Little Dog", "Actual win rate by how big a favorite or underdog you were projected to be."
+                        "As Foretold", "Actual win rate by how big a favorite or underdog you were projected to be."
                     )
                     wins = matrix[matrix["result"] == "Win"]
                     fig = go.Figure(
@@ -1451,7 +1452,7 @@ def main() -> None:
                     yaxis_title="Manager",
                 )
                 render_chart_header(
-                    "The Big Salad Breakdown",
+                    "The Inventory Ledger",
                     "Points/week by position - color shows rank within that position, not raw magnitude.",
                 )
                 st.plotly_chart(polish_figure(fig))
@@ -1464,7 +1465,7 @@ def main() -> None:
             st.info("No transaction or bench data available.")
         else:
             with st.container(border=True):
-                render_chart_header("Hustle vs. Waste", "Waiver-wire activity vs. points left stranded on the bench.")
+                render_chart_header("Unearthed vs. Untouched", "Waiver-wire activity vs. points left stranded on the bench.")
                 fig = scatter_figure(
                     profiles,
                     "waiver_adds",
@@ -1498,43 +1499,43 @@ def main() -> None:
             del margin_renames["team_name"]
             sections = [
                 (
-                    "🏆 Feats of Strength",
+                    "🏆 Legendary Hauls",
                     f"Top {top_n_choice} highest single-week scores",
                     leaderboards["highest_scores"],
                     game_renames,
                 ),
                 (
-                    "😩 Serenity Now",
+                    "😩 The Devastating Losses",
                     f"Top {top_n_choice} worst losses (lowest score that still lost)",
                     leaderboards["worst_losses"],
                     game_renames,
                 ),
                 (
-                    "😬 Shrinkage",
+                    "🪙 The Coin Flip",
                     f"Top {top_n_choice} closest games",
                     leaderboards["closest_games"],
                     margin_renames,
                 ),
                 (
-                    "💥 The Bizarro Blowouts",
+                    "💥 Total Plunder",
                     f"Top {top_n_choice} biggest margins",
                     leaderboards["biggest_blowouts"],
                     margin_renames,
                 ),
                 (
-                    "🔥 Master of My Domain",
+                    "👑 The Reign",
                     f"Top {top_n_choice} winning streaks",
                     leaderboards["longest_win_streaks"],
                     {"manager_name": "Manager", "season": "Season", "win_streak": "Streak (weeks)"},
                 ),
                 (
-                    "🚫 No Soup For You",
+                    "⛓️ The Dark Ages",
                     f"Top {top_n_choice} losing streaks",
                     leaderboards["longest_loss_streaks"],
                     {"manager_name": "Manager", "season": "Season", "loss_streak": "Streak (weeks)"},
                 ),
                 (
-                    "📈 The Season for the Ages",
+                    "💎 The Crown Jewel Seasons",
                     f"Top {top_n_choice} single-season point totals",
                     leaderboards["best_season_totals"],
                     {"season": "Season", "manager_name": "Manager", "team_name": "Team", "points_for": "Total Points"},
